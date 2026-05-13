@@ -4,26 +4,34 @@
 
 Dieses Design beschreibt die technische Umsetzung einer Taschenrechner-App als Flutter-Anwendung mit Clean Architecture. Die App ersetzt das bestehende Counter-Template und bietet grundlegende arithmetische Operationen (Addition, Subtraktion, Multiplikation, Division) mit einer responsiven Benutzeroberfläche.
 
-Die Architektur folgt dem Prinzip der Schichtentrennung (Domain / Presentation) gemäß den Projekt-Steering-Vorgaben. Als State-Management-Lösung wird **Cubit (flutter_bloc)** eingesetzt, da es leichtgewichtig, testbar und für den Umfang dieser App ideal geeignet ist.
+Die Architektur folgt dem Prinzip der Schichtentrennung mit zwei aktiven Schichten:
 
-### Zentrale Design-Entscheidungen
+- **Domain Layer**: fachliche Modelle, Berechnungslogik, Parser, Formatter und Fehlerobjekte
+- **Presentation Layer**: Flutter-UI, Widgets und Cubit-basierte Zustandsverwaltung
+
+Ein Data-Layer ist für diese App nicht erforderlich, da keine Persistenz, keine API und keine externe Datenquelle verwendet werden.
+
+Als State-Management-Lösung wird **Cubit (`flutter_bloc`)** eingesetzt. Cubit ist für diesen Anwendungsfall leichtgewichtig, gut testbar und passt zu einer klaren, immutable State-Struktur.
+
+## Zentrale Design-Entscheidungen
 
 | Entscheidung | Wahl | Begründung |
 |---|---|---|
-| State Management | Cubit (flutter_bloc) | Einfacher als Bloc für diesen Anwendungsfall, gute Testbarkeit, immutable States |
-| Value Equality | Equatable | Leichtgewichtig, kein Code-Generator nötig (vs. freezed) |
-| Dezimalzahlen | Dart `double` mit Rundungslogik | Ausreichend für 12-stellige Genauigkeit, kein externes Package nötig |
-| Layout-Strategie | LayoutBuilder + OrientationBuilder | Native Flutter-Lösung für responsives Design |
+| State Management | Cubit (`flutter_bloc`) | Leichtgewichtig, testbar, ausreichend für die überschaubare State-Machine der App |
+| Value Equality | `equatable` | Keine Code-Generierung nötig, ausreichend für State- und Entity-Vergleiche |
+| Dezimalzahlen | `decimal` Package | Vermeidet Floating-Point-Artefakte wie `0.1 + 0.2` und unterstützt stabile Formatierung und Round-Trips |
+| Fehlerbehandlung | Eigenes Result-/Failure-Modell | Explizite, typsichere Fehlerbehandlung ohne unbehandelte Exceptions und ohne schwere funktionale Abhängigkeit |
+| Layout-Strategie | `LayoutBuilder` + `OrientationBuilder` | Native Flutter-Lösung für responsives Layout in Hoch- und Querformat |
+| Parser-Nutzung | Domain-Komponente, nicht primär UI-Steuerung | Parser/Formatter dienen der Expression-Konvertierung und Testbarkeit; die Button-UI arbeitet zustandsbasiert |
 
 ## Architektur
-
-Die App folgt der Clean Architecture mit zwei aktiven Schichten:
 
 ```mermaid
 graph TB
     subgraph Presentation["Presentation Layer"]
         Page[CalculatorPage]
         Cubit[CalculatorCubit]
+        State[CalculatorState]
         DP[DisplayPanel]
         BG[ButtonGrid]
         CB[CalculatorButton]
@@ -33,37 +41,53 @@ graph TB
         CE[CalculatorEngine]
         EP[ExpressionParser]
         EF[ExpressionFormatter]
-        Entities[Entities & Failures]
+        Entities[Entities]
+        Failures[Failures]
+        Results[Result Types]
     end
 
     Page --> Cubit
+    Page --> State
     Page --> DP
     Page --> BG
     BG --> CB
     Cubit --> CE
-    Cubit --> EP
     Cubit --> EF
     CE --> Entities
+    CE --> Failures
+    CE --> Results
     EP --> Entities
+    EP --> Failures
+    EP --> Results
     EF --> Entities
 ```
 
-### Verzeichnisstruktur
+### Dependency Rule
 
-```
+- **Presentation → Domain**: `CalculatorCubit` und UI-Komposition dürfen Domain-Klassen importieren.
+- **Domain → keine äußeren Schichten**: Domain-Klassen haben keine Abhängigkeit zu Flutter, Presentation oder Data.
+- **Kein Data-Layer**: Es gibt keine Persistenz oder externe Datenquelle.
+- **Widgets bleiben passiv**: Widgets rufen keine Domain-Use-Cases direkt auf. Sie erhalten Daten und Callbacks von `CalculatorPage` bzw. `CalculatorCubit`.
+
+## Verzeichnisstruktur
+
+```text
 lib/
 ├── main.dart
 ├── core/
 │   ├── constants/
 │   │   └── app_constants.dart
-│   └── error/
-│       └── failures.dart
+│   └── result/
+│       └── result.dart
 └── features/
     └── calculator/
         ├── domain/
         │   ├── entities/
         │   │   ├── calculation_expression.dart
         │   │   └── operator_type.dart
+        │   ├── failures/
+        │   │   ├── calculation_failure.dart
+        │   │   └── parse_failure.dart
         │   └── usecases/
         │       ├── calculator_engine.dart
         │       ├── expression_parser.dart
@@ -71,7 +95,8 @@ lib/
         └── presentation/
             ├── cubit/
             │   ├── calculator_cubit.dart
-            │   └── calculator_state.dart
+            │   ├── calculator_state.dart
+            │   └── calculator_status.dart
             ├── pages/
             │   └── calculator_page.dart
             └── widgets/
@@ -80,34 +105,39 @@ lib/
                 └── display_panel.dart
 ```
 
-### Dependency Rule
+## Domain Layer
 
-- **Presentation → Domain**: Widgets und Cubit dürfen Domain-Klassen importieren.
-- **Domain → nichts**: Domain-Klassen haben keine Abhängigkeiten zu Flutter oder Presentation.
-- **Kein Data-Layer**: Für diese App ist keine Persistenz oder externe Datenquelle erforderlich.
-
-## Komponenten und Schnittstellen
-
-### Domain Layer
-
-#### OperatorType (Enum)
+### OperatorType
 
 ```dart
 enum OperatorType {
-  addition,      // +
-  subtraction,   // −
-  multiplication, // ×
-  division,      // ÷
+  addition,
+  subtraction,
+  multiplication,
+  division,
 }
 ```
 
-#### CalculationExpression (Entity)
+Hilfsmethoden können als Extension umgesetzt werden:
+
+```dart
+extension OperatorTypeSymbol on OperatorType {
+  String get symbol => switch (this) {
+    OperatorType.addition => '+',
+    OperatorType.subtraction => '−',
+    OperatorType.multiplication => '×',
+    OperatorType.division => '÷',
+  };
+}
+```
+
+### CalculationExpression
 
 ```dart
 class CalculationExpression extends Equatable {
-  final double firstOperand;
+  final Decimal firstOperand;
   final OperatorType operator;
-  final double secondOperand;
+  final Decimal secondOperand;
 
   const CalculationExpression({
     required this.firstOperand,
@@ -120,7 +150,7 @@ class CalculationExpression extends Equatable {
 }
 ```
 
-#### CalculationFailure (Failure)
+### CalculationFailure
 
 ```dart
 enum CalculationFailureType {
@@ -138,7 +168,7 @@ class CalculationFailure extends Equatable {
 }
 ```
 
-#### ParseFailure (Failure)
+### ParseFailure
 
 ```dart
 enum ParseFailureType {
@@ -158,45 +188,125 @@ class ParseFailure extends Equatable {
 }
 ```
 
-#### CalculatorEngine (Use Case)
+### Result-Typen
+
+Für die Domain wird ein leichtes Result-Modell verwendet. Dadurch ist die Fehlerbehandlung explizit, ohne dass `dartz` notwendig ist.
 
 ```dart
-/// Führt arithmetische Berechnungen durch.
-/// Gibt Either<CalculationFailure, double> zurück.
+sealed class CalculationResult extends Equatable {
+  const CalculationResult();
+}
+
+class CalculationSuccess extends CalculationResult {
+  final Decimal value;
+
+  const CalculationSuccess(this.value);
+
+  @override
+  List<Object?> get props => [value];
+}
+
+class CalculationError extends CalculationResult {
+  final CalculationFailure failure;
+
+  const CalculationError(this.failure);
+
+  @override
+  List<Object?> get props => [failure];
+}
+```
+
+```dart
+sealed class ParseResult extends Equatable {
+  const ParseResult();
+}
+
+class ParseSuccess extends ParseResult {
+  final CalculationExpression expression;
+
+  const ParseSuccess(this.expression);
+
+  @override
+  List<Object?> get props => [expression];
+}
+
+class ParseError extends ParseResult {
+  final ParseFailure failure;
+
+  const ParseError(this.failure);
+
+  @override
+  List<Object?> get props => [failure];
+}
+```
+
+## Domain Use Cases
+
+### CalculatorEngine
+
+```dart
 class CalculatorEngine {
-  /// Berechnet das Ergebnis einer CalculationExpression.
-  Either<CalculationFailure, double> calculate(CalculationExpression expression);
+  CalculationResult calculate(CalculationExpression expression);
 }
 ```
 
 Verhalten:
-- Addition, Subtraktion, Multiplikation: direkte Berechnung
-- Division: Prüfung auf Division durch Null → `CalculationFailure(divisionByZero)`
-- Ergebnis außerhalb des Bereichs oder nicht endlich → `CalculationFailure(overflow)`
 
-#### ExpressionParser (Use Case)
+- Addition, Subtraktion und Multiplikation werden direkt mit `Decimal` berechnet.
+- Division prüft zuerst, ob der zweite Operand `0` ist.
+- Division durch Null gibt `CalculationError(CalculationFailure(divisionByZero))` zurück.
+- Ergebnisse, die außerhalb des unterstützten Ergebnisbereichs liegen, geben `CalculationError(CalculationFailure(overflow))` zurück.
+- Die Domain gibt niemals den UI-Text `"Fehler"` zurück.
+
+### Numerischer Bereich
+
+Der unterstützte Operandbereich ist:
+
+```text
+-999999999999 bis 999999999999
+```
+
+Der unterstützte Ergebnisbereich ist identisch mit dem Operandbereich. Ein Ergebnis außerhalb dieses Bereichs führt zu `CalculationFailureType.overflow`.
+
+Die Anzeige ist davon getrennt: Der Formatter stellt gültige Ergebnisse mit maximal 12 sichtbaren Ziffern dar. Dezimalpunkt und Minuszeichen zählen nicht als Ziffern.
+
+### ExpressionParser
 
 ```dart
-/// Wandelt eine formatierte Zeichenkette in eine CalculationExpression um.
 class ExpressionParser {
-  /// Parst einen String im Format "{Operand1} {Operator} {Operand2}".
-  Either<ParseFailure, CalculationExpression> parse(String input);
+  ParseResult parse(String input);
 }
 ```
 
-#### ExpressionFormatter (Use Case)
+Verhalten:
+
+- Erwartet Ausdrücke im Format `{Operand1} {Operator} {Operand2}`.
+- Unterstützte Operator-Symbole: `+`, `−`, `×`, `÷`.
+- Jeder Operand darf maximal 12 sichtbare Ziffern enthalten.
+- Dezimalpunkt und Minuszeichen zählen nicht als sichtbare Ziffern.
+- Ungültige Eingaben geben einen spezifischen `ParseFailure` zurück.
+
+### ExpressionFormatter
 
 ```dart
-/// Formatiert eine CalculationExpression in eine darstellbare Zeichenkette.
 class ExpressionFormatter {
-  /// Gibt einen String im Format "{Operand1} {Operator} {Operand2}" zurück.
-  String format(CalculationExpression expression);
+  String formatExpression(CalculationExpression expression);
+  String formatNumber(Decimal value);
 }
 ```
 
-### Presentation Layer
+Verhalten:
 
-#### CalculatorStatus (Enum)
+- `formatExpression` gibt `{Operand1} {Operator} {Operand2}` zurück.
+- `formatNumber` entfernt unnötige führende Nullen.
+- `formatNumber` erhält `0` vor Dezimalzahlen kleiner als `1`, z. B. `0.5`.
+- `formatNumber` entfernt unnötige nachgestellte Nullen nach dem Dezimalpunkt.
+- `formatNumber` stellt maximal 12 sichtbare Ziffern dar.
+- Falls Rundung nötig ist, wird auf maximal 12 signifikante sichtbare Ziffern gerundet.
+
+## Presentation Layer
+
+### CalculatorStatus
 
 ```dart
 enum CalculatorStatus {
@@ -207,14 +317,14 @@ enum CalculatorStatus {
 }
 ```
 
-#### CalculatorState (Immutable State)
+### CalculatorState
 
 ```dart
 class CalculatorState extends Equatable {
   final String currentInput;
   final OperatorType? selectedOperator;
-  final double? firstOperand;
-  final double? result;
+  final Decimal? firstOperand;
+  final Decimal? result;
   final CalculatorStatus status;
 
   const CalculatorState({
@@ -227,20 +337,54 @@ class CalculatorState extends Equatable {
 
   static const initial = CalculatorState();
 
-  CalculatorState copyWith({...});
+  CalculatorState copyWith({
+    String? currentInput,
+    OperatorType? selectedOperator,
+    bool clearSelectedOperator = false,
+    Decimal? firstOperand,
+    bool clearFirstOperand = false,
+    Decimal? result,
+    bool clearResult = false,
+    CalculatorStatus? status,
+  });
 
   @override
-  List<Object?> get props => [currentInput, selectedOperator, firstOperand, result, status];
+  List<Object?> get props => [
+        currentInput,
+        selectedOperator,
+        firstOperand,
+        result,
+        status,
+      ];
 }
 ```
 
-#### CalculatorCubit (State Management)
+Hinweis: Für nullable Felder verwendet `copyWith` explizite Clear-Flags, damit zwischen „nicht ändern“ und „auf null setzen“ unterschieden werden kann.
+
+### Abgeleitete Anzeigeinformationen
+
+`CalculatorState` speichert keinen separaten `expressionText`. Dieser wird in `CalculatorPage` oder in einer kleinen Presentation-Hilfsmethode aus dem State abgeleitet. Dadurch wird doppelter, potenziell inkonsistenter UI-State vermieden.
+
+Beispielhafte Ableitung:
+
+- `status == error` → Hauptanzeige: `Fehler`
+- `status == resultShown` und `result != null` → Hauptanzeige: formatiertes Ergebnis
+- sonst → Hauptanzeige: `currentInput`
+- `firstOperand != null && selectedOperator != null` → Nebenanzeige: `{firstOperand} {operator}`
+
+### CalculatorCubit
 
 ```dart
 class CalculatorCubit extends Cubit<CalculatorState> {
   final CalculatorEngine _engine;
+  final ExpressionFormatter _formatter;
 
-  CalculatorCubit(this._engine) : super(CalculatorState.initial);
+  CalculatorCubit({
+    required CalculatorEngine engine,
+    required ExpressionFormatter formatter,
+  })  : _engine = engine,
+        _formatter = formatter,
+        super(CalculatorState.initial);
 
   void inputDigit(String digit);
   void inputDecimalPoint();
@@ -251,30 +395,53 @@ class CalculatorCubit extends Cubit<CalculatorState> {
 }
 ```
 
-Zustandsübergänge:
+Der `ExpressionParser` wird nicht vom Cubit für die normale Button-Bedienung benötigt. Er bleibt eine Domain-Komponente für das Parsen formatierter Ausdrücke und wird separat getestet.
+
+## Zustandsübergänge
 
 ```mermaid
 stateDiagram-v2
     [*] --> Input: App-Start / Clear
     Input --> OperatorSelected: Operator gewählt
-    OperatorSelected --> Input: Ziffer eingegeben
+    OperatorSelected --> Input: Ziffer / Dezimalpunkt eingegeben
     OperatorSelected --> OperatorSelected: Anderer Operator gewählt
-    Input --> ResultShown: Gleichheits-Taste (mit vollständigem Ausdruck)
+    Input --> ResultShown: Gleichheits-Taste mit vollständigem Ausdruck
     ResultShown --> Input: Ziffer / Dezimalpunkt eingegeben
-    ResultShown --> OperatorSelected: Operator gewählt (Ergebnis als 1. Operand)
+    ResultShown --> OperatorSelected: Operator gewählt, Ergebnis als 1. Operand
+    ResultShown --> Input: Backspace, Ergebnis als Eingabe übernehmen und kürzen
     Input --> Error: Berechnungsfehler
     OperatorSelected --> Error: Berechnungsfehler
-    Error --> Input: Ziffer / Dezimalpunkt / Clear / Backspace
+    Error --> Input: Ziffer / Dezimalpunkt
+    Error --> Input: Clear / Backspace
 ```
 
-#### CalculatorPage (Page)
+### Explizite Edge-Case-Regeln
+
+- `calculate()` ohne `selectedOperator` oder ohne `firstOperand` bleibt ohne Effekt.
+- `calculate()` im Status `operatorSelected` bleibt ohne Effekt, solange kein zweiter Operand eingegeben wurde.
+- `selectOperator()` im Initialzustand mit `currentInput = "0"` setzt `firstOperand = 0` und `status = operatorSelected`.
+- `selectOperator()` im Status `operatorSelected` ersetzt den aktiven Operator, ohne `firstOperand` zu ändern.
+- `selectOperator()` im Status `resultShown` übernimmt das Ergebnis als `firstOperand`.
+- `inputDigit()` im Status `resultShown` startet eine neue Berechnung mit der eingegebenen Ziffer.
+- `inputDecimalPoint()` im Status `resultShown` startet eine neue Berechnung mit `0.`.
+- `inputDigit()` oder `inputDecimalPoint()` im Status `error` startet eine neue Berechnung.
+- `backspace()` im Status `error` setzt den State auf `CalculatorState.initial`.
+- `backspace()` im Status `resultShown` übernimmt das formatierte Ergebnis als `currentInput` und entfernt das letzte Zeichen.
+- Wenn nach `backspace()` keine Zeichen übrig bleiben, wird `currentInput` auf `0` gesetzt.
+- Operationen werden sequenziell von links nach rechts ausgewertet. Es gibt keine Operatorpräzedenz.
+
+## UI-Komponenten
+
+### CalculatorPage
 
 Verantwortlich für:
-- Layout-Entscheidung (Hoch-/Querformat) via `OrientationBuilder`
-- Bereitstellung des `CalculatorCubit` via `BlocProvider`
-- Zusammensetzung von `DisplayPanel` und `ButtonGrid`
 
-#### DisplayPanel (Widget)
+- Bereitstellung des `CalculatorCubit` via `BlocProvider`
+- Layout-Entscheidung via `LayoutBuilder` und `OrientationBuilder`
+- Zusammensetzung von `DisplayPanel` und `ButtonGrid`
+- Ableitung von `displayText` und `expressionText` aus `CalculatorState`
+
+### DisplayPanel
 
 ```dart
 class DisplayPanel extends StatelessWidget {
@@ -289,32 +456,51 @@ class DisplayPanel extends StatelessWidget {
 }
 ```
 
-#### ButtonGrid (Widget)
+Verhalten:
+
+- Zeigt `displayText` als Hauptanzeige.
+- Zeigt `expressionText` optional als kleinere Nebenanzeige.
+- Muss unabhängig in Widget-Tests instanziierbar sein.
+- Darf keinen Cubit und keine Domain-Use-Cases direkt kennen.
+
+### ButtonGrid
 
 ```dart
 class ButtonGrid extends StatelessWidget {
   final void Function(String digit) onDigitPressed;
-  final void Function() onDecimalPressed;
+  final VoidCallback onDecimalPressed;
   final void Function(OperatorType operator) onOperatorPressed;
-  final void Function() onEqualsPressed;
-  final void Function() onClearPressed;
-  final void Function() onBackspacePressed;
+  final VoidCallback onEqualsPressed;
+  final VoidCallback onClearPressed;
+  final VoidCallback onBackspacePressed;
   final OperatorType? activeOperator;
 
-  const ButtonGrid({...});
+  const ButtonGrid({
+    required this.onDigitPressed,
+    required this.onDecimalPressed,
+    required this.onOperatorPressed,
+    required this.onEqualsPressed,
+    required this.onClearPressed,
+    required this.onBackspacePressed,
+    this.activeOperator,
+    super.key,
+  });
 }
 ```
 
-Layout: 4 Spalten, 5 Reihen:
-```
-| C    | ⌫    | ÷    | ×    |
-| 7    | 8    | 9    | −    |
-| 4    | 5    | 6    | +    |
-| 1    | 2    | 3    | =    |
-| 0 (doppelt)  | .    | =    |
+Layout: 4 Spalten, 5 Reihen, alle Tasten gleich groß.
+
+```text
+| C | ⌫ | ÷ | × |
+| 7 | 8 | 9 | − |
+| 4 | 5 | 6 | + |
+| 1 | 2 | 3 | = |
+| 0 | . |   |   |
 ```
 
-#### CalculatorButton (Widget)
+Die zwei leeren Zellen in der letzten Zeile sind Spacer und keine interaktiven Buttons. Dadurch gibt es keine doppelten `=`-Tasten und keine uneindeutigen Spans.
+
+### CalculatorButton
 
 ```dart
 class CalculatorButton extends StatelessWidget {
@@ -322,243 +508,262 @@ class CalculatorButton extends StatelessWidget {
   final Color backgroundColor;
   final VoidCallback onPressed;
   final bool isActive;
-  final int flex;
 
   const CalculatorButton({
     required this.label,
     required this.backgroundColor,
     required this.onPressed,
     this.isActive = false,
-    this.flex = 1,
     super.key,
   });
 }
 ```
 
-## Datenmodelle
+Verhalten:
 
-### CalculationExpression
+- Zeigt sichtbares Pressed-Feedback über Flutter-Material-Mechanismen, z. B. `InkWell`, `ElevatedButton` oder `InkResponse`.
+- Aktive Operator-Tasten werden über `isActive` visuell hervorgehoben.
+- Operator-Tasten unterscheiden sich farblich von Ziffern-Tasten.
+- Mindestgröße: 48 × 48 logische Pixel.
+- Muss unabhängig in Widget-Tests instanziierbar sein.
 
-| Feld | Typ | Beschreibung |
-|---|---|---|
-| firstOperand | `double` | Erster Operand (Bereich: -999999999999 bis 999999999999) |
-| operator | `OperatorType` | Arithmetischer Operator |
-| secondOperand | `double` | Zweiter Operand (gleicher Bereich) |
+## Eingabe- und Formatierungsregeln
 
-### CalculatorState
+### Zifferneingabe
 
-| Feld | Typ | Initialwert | Beschreibung |
-|---|---|---|---|
-| currentInput | `String` | `'0'` | Aktuelle Benutzereingabe als Zeichenkette |
-| selectedOperator | `OperatorType?` | `null` | Aktuell gewählter Operator |
-| firstOperand | `double?` | `null` | Erster Operand (gespeichert nach Operator-Wahl) |
-| result | `double?` | `null` | Letztes berechnetes Ergebnis |
-| status | `CalculatorStatus` | `input` | Aktueller Zustand der App |
+- `currentInput` startet mit `0`.
+- Wenn `currentInput == "0"` ist und eine Ziffer `1`–`9` eingegeben wird, ersetzt die Ziffer die `0`.
+- Wenn `currentInput == "0"` ist und `0` eingegeben wird, bleibt `currentInput == "0"`.
+- Führende Nullen werden verhindert, außer bei Dezimalzahlen kleiner als 1, z. B. `0.5`.
+- Maximal 12 sichtbare Ziffern pro Operand sind erlaubt.
+- Dezimalpunkt und Minuszeichen zählen nicht als sichtbare Ziffern.
 
-### Formatierungsregeln
+### Dezimalpunkt
 
-- Maximal 12 sichtbare Ziffern (Dezimalpunkt und Minuszeichen zählen nicht)
-- Keine führenden Nullen (außer bei Werten < 1, z.B. „0.5")
-- Ergebnisse mit mehr als 12 Ziffern werden auf 12 signifikante Ziffern gerundet
-- Trailing Zeros nach Dezimalpunkt werden bei Ergebnissen entfernt
+- Wenn `currentInput` leer oder `0` ist, erzeugt die Dezimalpunkt-Eingabe `0.`.
+- Wenn `currentInput` bereits einen Dezimalpunkt enthält, wird die Eingabe ignoriert.
+- Jeder Operand darf maximal einen Dezimalpunkt enthalten.
 
+### Negative Zahlen
 
-## Korrektheitseigenschaften (Correctness Properties)
+- Der Domain-Layer unterstützt negative Operanden und negative Ergebnisse.
+- Die aktuelle UI enthält keine separate `+/-`-Taste.
+- Negative Werte können in der UI daher nur als Berechnungsergebnisse oder durch Weiterrechnen mit negativen Zwischenergebnissen entstehen.
+- Eine spätere Erweiterung um direkte negative Eingabe kann über eine zusätzliche `+/-`-Taste erfolgen.
 
-*Eine Korrektheitseigenschaft ist ein Verhalten, das für alle gültigen Ausführungen eines Systems gelten muss — eine formale Aussage darüber, was das System tun soll. Eigenschaften bilden die Brücke zwischen menschenlesbaren Spezifikationen und maschinell verifizierbaren Korrektheitsgarantien.*
+### Ergebnisformatierung
 
-### Property 1: Korrekte arithmetische Berechnung
+- Gültige Ergebnisse werden mit maximal 12 sichtbaren Ziffern angezeigt.
+- Dezimalpunkt und Minuszeichen zählen nicht als sichtbare Ziffern.
+- Nachgestellte Nullen nach dem Dezimalpunkt werden entfernt.
+- Wenn ein Ergebnis mehr als 12 sichtbare Ziffern benötigt, rundet der Formatter auf maximal 12 signifikante sichtbare Ziffern.
+- Ergebnisse außerhalb des unterstützten Ergebnisbereichs führen zu `overflow` und werden als `Fehler` angezeigt.
 
-*Für jede* gültige `CalculationExpression` mit Operanden im Bereich [-999999999999, 999999999999] und einem Operator aus {+, −, ×, ÷} (wobei bei Division der zweite Operand ≠ 0), soll das Ergebnis des `CalculatorEngine` dem mathematisch korrekten Ergebnis der Operation entsprechen.
+## Responsives Layout
 
-**Validates: Requirements 1.1, 1.2**
+### Hochformat
 
-### Property 2: Division durch Null ergibt Fehler
+- `DisplayPanel` belegt ca. 30–36 % der verfügbaren Höhe.
+- `ButtonGrid` belegt ca. 64–70 % der verfügbaren Höhe.
+- Beide Komponenten füllen die verfügbare Breite ohne horizontalen Überlauf.
 
-*Für jeden* gültigen ersten Operanden und den Operator Division mit zweitem Operanden = 0, soll der `CalculatorEngine` einen `CalculationFailure` vom Typ `divisionByZero` zurückgeben.
+### Querformat
 
-**Validates: Requirements 1.3**
+- `DisplayPanel` belegt ca. 30–40 % der verfügbaren Breite auf der linken Seite.
+- `ButtonGrid` belegt ca. 60–70 % der verfügbaren Breite auf der rechten Seite.
+- Beide Komponenten füllen die verfügbare Höhe ohne Überlauf.
 
-### Property 3: Sequenzielle Auswertung ohne Operatorpräzedenz
+### Kleine Bildschirme
 
-*Für jede* Sequenz von mindestens zwei Operationen (Operand₁ Op₁ Operand₂ Op₂ Operand₃ ...), soll die Auswertung strikt von links nach rechts erfolgen: Zuerst wird Operand₁ Op₁ Operand₂ berechnet, dann das Zwischenergebnis Op₂ Operand₃, usw.
-
-**Validates: Requirements 1.5, 1.6**
-
-### Property 4: Fehlerzustand wird korrekt betreten und verlassen
-
-*Für jeden* `CalculatorState`, wenn eine Berechnung einen `CalculationFailure` erzeugt, soll der resultierende Status `error` sein. *Für jeden* Zustand mit Status `error`, wenn eine Ziffer oder ein Dezimalpunkt eingegeben wird, soll der Status auf `input` wechseln und eine neue Berechnung beginnen.
-
-**Validates: Requirements 1.7, 1.8**
-
-### Property 5: Ergebnis als Operand oder neue Berechnung
-
-*Für jeden* `CalculatorState` mit Status `resultShown` und einem Ergebnis R: Wenn ein Operator eingegeben wird, soll `firstOperand` den Wert R annehmen und der Status auf `operatorSelected` wechseln. Wenn eine Ziffer eingegeben wird, soll eine neue Berechnung mit dieser Ziffer beginnen (`firstOperand` = null, `currentInput` = eingegebene Ziffer).
-
-**Validates: Requirements 1.9, 1.10**
-
-### Property 6: Keine führenden Nullen bei Zifferneingabe
-
-*Für jede* Sequenz von Zifferneingaben soll `currentInput` keine führenden Nullen enthalten, es sei denn der Wert ist „0" selbst oder beginnt mit „0." (Dezimalzahl < 1).
-
-**Validates: Requirements 2.1, 2.2**
-
-### Property 7: Dezimalpunkt-Invariante
-
-*Für jede* beliebige Sequenz von Benutzereingaben (Ziffern und Dezimalpunkte) soll `currentInput` zu jedem Zeitpunkt maximal einen Dezimalpunkt enthalten.
-
-**Validates: Requirements 2.4, 2.5**
-
-### Property 8: Maximale Ziffernanzahl
-
-*Für jede* beliebige Sequenz von Benutzereingaben soll die Anzahl der sichtbaren Ziffern in `currentInput` (ohne Dezimalpunkt und Minuszeichen) zu keinem Zeitpunkt 12 überschreiten. Ebenso soll jedes formatierte Ergebnis maximal 12 signifikante Ziffern enthalten.
-
-**Validates: Requirements 2.6, 2.7, 2.9**
-
-### Property 9: Clear setzt auf Initialzustand
-
-*Für jeden* beliebigen `CalculatorState` soll nach Ausführung der Clear-Aktion der resultierende Zustand exakt dem definierten Initialzustand entsprechen (`currentInput` = „0", `selectedOperator` = null, `firstOperand` = null, `result` = null, `status` = input).
-
-**Validates: Requirements 3.1**
-
-### Property 10: Backspace entfernt letztes Zeichen
-
-*Für jede* nicht-leere `currentInput` mit mehr als einem Zeichen soll nach Ausführung der Backspace-Aktion `currentInput` dem ursprünglichen String ohne das letzte Zeichen entsprechen. Wenn `currentInput` nur ein Zeichen enthält, soll das Ergebnis „0" sein.
-
-**Validates: Requirements 3.2, 3.3**
-
-### Property 11: State-Wertgleichheit
-
-*Für jeden* `CalculatorState` S soll gelten: Ein zweiter `CalculatorState` mit identischen Feldwerten ist gleich S (S₁ == S₂ wenn alle Felder gleich sind). Außerdem soll `copyWith` eine neue Instanz erzeugen, ohne die Originalinstanz zu verändern.
-
-**Validates: Requirements 5.1, 5.5**
-
-### Property 12: Round-Trip Parser/Formatter
-
-*Für jede* gültige `CalculationExpression` mit Operanden ≤ 12 sichtbare Ziffern soll gelten: Wenn die Expression formatiert und das Ergebnis erneut geparst wird, sind die Operandenwerte numerisch gleich und der Operator-Typ identisch zur ursprünglichen Struktur.
-
-**Validates: Requirements 6.8**
-
-### Property 13: Formatter-Invarianten
-
-*Für jede* `CalculationExpression` soll die formatierte Ausgabe des `ExpressionFormatter` folgende Invarianten erfüllen: (a) keine führenden Nullen bei Operanden ≥ 1, (b) jeder Operand hat maximal 12 sichtbare Ziffern, (c) das Format ist „{Operand1} {Operator} {Operand2}".
-
-**Validates: Requirements 6.5, 6.6, 6.7**
-
-### Property 14: Parser erkennt ungültige Eingaben
-
-*Für jede* ungültige Eingabe (fehlender Operand, fehlender Operator, ungültiges Zeichen, Operand mit > 12 Ziffern) soll der `ExpressionParser` einen `ParseFailure` mit dem korrekten Fehlertyp zurückgeben.
-
-**Validates: Requirements 6.3**
-
-### Property 15: Operator-Ersetzung
-
-*Für jeden* `CalculatorState` mit Status `operatorSelected` und einem aktiven Operator Op₁, wenn ein neuer Operator Op₂ eingegeben wird, soll `selectedOperator` den Wert Op₂ annehmen und der Status `operatorSelected` bleiben. Der `firstOperand` bleibt unverändert.
-
-**Validates: Requirements 9.1**
+- Jede `CalculatorButton`-Instanz muss mindestens 48 × 48 logische Pixel groß bleiben.
+- Wenn die verfügbare Fläche nicht ausreicht, wird das `ButtonGrid` scrollbar, damit alle interaktiven Tasten erreichbar bleiben.
+- Unterstützte Breite: 320 bis 1024 logische Pixel.
 
 ## Fehlerbehandlung
 
-### Domain-Fehler
-
 | Fehlertyp | Auslöser | Verhalten |
 |---|---|---|
-| `CalculationFailure(divisionByZero)` | Division mit zweitem Operand = 0 | Status → `error`, Display zeigt „Fehler" |
-| `CalculationFailure(overflow)` | Ergebnis nicht endlich oder außerhalb des Bereichs | Status → `error`, Display zeigt „Fehler" |
-| `ParseFailure(missingOperand)` | Ausdruck ohne Operand | Interner Fehler, sollte durch UI-Logik verhindert werden |
-| `ParseFailure(missingOperator)` | Ausdruck ohne Operator | Interner Fehler, sollte durch UI-Logik verhindert werden |
-| `ParseFailure(invalidCharacter)` | Ungültiges Zeichen im Ausdruck | Interner Fehler, sollte durch UI-Logik verhindert werden |
-| `ParseFailure(operandTooLong)` | Operand mit > 12 Ziffern | Interner Fehler, wird durch Eingabebegrenzung verhindert |
+| `CalculationFailureType.divisionByZero` | Division mit zweitem Operand `0` | Status → `error`, Display zeigt `Fehler` |
+| `CalculationFailureType.overflow` | Ergebnis außerhalb des unterstützten Bereichs | Status → `error`, Display zeigt `Fehler` |
+| `ParseFailureType.missingOperand` | Ausdruck ohne benötigten Operand | Parser gibt `ParseError` zurück |
+| `ParseFailureType.missingOperator` | Ausdruck ohne Operator | Parser gibt `ParseError` zurück |
+| `ParseFailureType.invalidCharacter` | Ungültiges Zeichen im Ausdruck | Parser gibt `ParseError` zurück |
+| `ParseFailureType.operandTooLong` | Operand mit mehr als 12 sichtbaren Ziffern | Parser gibt `ParseError` zurück |
 
 ### Fehler-Recovery
 
-- **Aus Fehlerzustand**: Jede Ziffern-, Dezimalpunkt- oder Clear-Eingabe setzt den Fehlerzustand zurück
-- **Backspace im Fehlerzustand**: Setzt auf Initialzustand zurück (wie Clear)
-- **Kein App-Absturz**: Alle Berechnungsfehler werden als `CalculationFailure` behandelt, nie als unbehandelte Exceptions
+- Zifferneingabe im Fehlerzustand startet eine neue Berechnung.
+- Dezimalpunkt im Fehlerzustand startet eine neue Berechnung mit `0.`.
+- Clear im Fehlerzustand setzt den State auf `CalculatorState.initial`.
+- Backspace im Fehlerzustand setzt den State auf `CalculatorState.initial`.
+- Domain-Fehler werden nicht als Exceptions an die UI weitergereicht.
 
-### Either-Pattern
+## Korrektheitseigenschaften
 
-Die Domain-Schicht verwendet das Either-Pattern (z.B. via `dartz` oder eigene Implementierung) für Fehlerbehandlung:
+Die folgenden Properties dienen als Grundlage für Property-Based Tests und Traceability. Die Requirement-Referenzen sind bewusst auf Hauptanforderungen bezogen, damit sie robust gegenüber kleineren Änderungen an Unterpunkten bleiben.
 
-```dart
-// Erfolg oder Fehler, ohne Exceptions
-Either<CalculationFailure, double> calculate(CalculationExpression expr);
-Either<ParseFailure, CalculationExpression> parse(String input);
-```
+### Property 1: Korrekte arithmetische Berechnung
 
-Dies ermöglicht:
-- Explizite Fehlerbehandlung im Cubit
-- Keine unbehandelten Exceptions
-- Typsichere Fehler-Propagation
+Für jede gültige `CalculationExpression` mit Operanden im unterstützten Bereich und einem Operator aus `{+, −, ×, ÷}` soll `CalculatorEngine` das mathematisch korrekte Ergebnis zurückgeben, sofern kein Fehlerfall vorliegt.
+
+**Validates:** Requirement 1
+
+### Property 2: Division durch Null ergibt Fehler
+
+Für jeden gültigen ersten Operanden und den Operator Division mit zweitem Operand `0` soll `CalculatorEngine` einen `CalculationFailureType.divisionByZero` zurückgeben.
+
+**Validates:** Requirement 1
+
+### Property 3: Sequenzielle Auswertung ohne Operatorpräzedenz
+
+Für jede Sequenz von mindestens zwei Operationen soll die Auswertung strikt von links nach rechts erfolgen. Operatorpräzedenz wird nicht angewendet.
+
+**Validates:** Requirement 1
+
+### Property 4: Fehlerzustand wird korrekt betreten und verlassen
+
+Wenn eine Berechnung einen `CalculationFailure` erzeugt, soll der resultierende Status `error` sein. Aus dem Status `error` startet eine Ziffern- oder Dezimalpunkt-Eingabe eine neue Berechnung.
+
+**Validates:** Requirement 1, Requirement 3, Requirement 5
+
+### Property 5: Ergebnis als Operand oder neue Berechnung
+
+Wenn `status == resultShown` und ein Ergebnis `R` vorhanden ist, soll eine Operator-Eingabe `R` als `firstOperand` übernehmen. Eine Zifferneingabe startet stattdessen eine neue Berechnung.
+
+**Validates:** Requirement 1, Requirement 5
+
+### Property 6: Keine führenden Nullen
+
+Für jede Sequenz von Zifferneingaben soll `currentInput` keine führenden Nullen enthalten, außer der Wert ist `0` selbst oder beginnt mit `0.`.
+
+**Validates:** Requirement 2
+
+### Property 7: Dezimalpunkt-Invariante
+
+Für jede Sequenz von Ziffern- und Dezimalpunkt-Eingaben soll `currentInput` maximal einen Dezimalpunkt enthalten.
+
+**Validates:** Requirement 2
+
+### Property 8: Maximale Ziffernanzahl
+
+Für jede Eingabesequenz soll die Anzahl sichtbarer Ziffern in `currentInput` nie größer als 12 sein. Formatierte Ergebnisse sollen ebenfalls maximal 12 sichtbare Ziffern enthalten.
+
+**Validates:** Requirement 2
+
+### Property 9: Clear setzt auf Initialzustand
+
+Für jeden beliebigen `CalculatorState` soll nach `clear()` der Zustand exakt `CalculatorState.initial` entsprechen.
+
+**Validates:** Requirement 3, Requirement 5
+
+### Property 10: Backspace entfernt letztes Zeichen
+
+Für jede Eingabe mit mehr als einem Zeichen soll `backspace()` das letzte Zeichen entfernen. Bei einer einstelligen Eingabe soll `currentInput` auf `0` gesetzt werden.
+
+**Validates:** Requirement 3
+
+### Property 11: State-Wertgleichheit
+
+Zwei `CalculatorState`-Instanzen mit identischen Feldwerten sollen gleich sein. `copyWith` soll eine neue Instanz erzeugen und die Originalinstanz nicht mutieren.
+
+**Validates:** Requirement 5
+
+### Property 12: Round-Trip Parser/Formatter
+
+Für jede gültige `CalculationExpression` mit Operanden mit maximal 12 sichtbaren Ziffern gilt: Wird die Expression formatiert und anschließend erneut geparst, sind die Operandenwerte numerisch gleich und der Operator-Typ identisch.
+
+**Validates:** Requirement 6
+
+### Property 13: Formatter-Invarianten
+
+Für jede gültige `CalculationExpression` soll die formatierte Ausgabe keine unerlaubten führenden Nullen enthalten, jeden Operand mit maximal 12 sichtbaren Ziffern darstellen und dem Format `{Operand1} {Operator} {Operand2}` folgen.
+
+**Validates:** Requirement 6
+
+### Property 14: Parser erkennt ungültige Eingaben
+
+Für jede ungültige Eingabe soll `ExpressionParser` einen `ParseFailure` mit dem passenden Fehlertyp zurückgeben.
+
+**Validates:** Requirement 6
+
+### Property 15: Operator-Ersetzung
+
+Wenn `status == operatorSelected` ist und ein neuer Operator gewählt wird, soll `selectedOperator` ersetzt werden, während `firstOperand` unverändert bleibt.
+
+**Validates:** Requirement 5, Requirement 8
 
 ## Teststrategie
 
 ### Dualer Testansatz
 
-Die Teststrategie kombiniert zwei komplementäre Ansätze:
+Die Teststrategie kombiniert:
 
-1. **Property-Based Tests**: Verifizieren universelle Eigenschaften über viele generierte Eingaben (min. 100 Iterationen pro Property)
-2. **Unit/Widget Tests**: Verifizieren spezifische Beispiele, Randfälle und UI-Verhalten
+1. **Property-Based Tests** für universelle Eigenschaften und Eingabevarianten
+2. **Unit- und Widget-Tests** für konkrete Beispiele, Edge Cases und UI-Verhalten
 
-### Property-Based Testing
+### Priorisierte Property-Based Tests
 
-**Bibliothek**: [`glados`](https://pub.dev/packages/glados) (Dart Property-Based Testing Library)
+Must-have:
 
-**Konfiguration**:
-- Minimum 100 Iterationen pro Property-Test
-- Jeder Test referenziert die zugehörige Design-Property
-- Tag-Format: `Feature: calculator-app, Property {number}: {property_text}`
+- Korrekte arithmetische Berechnung
+- Division durch Null
+- Keine führenden Nullen
+- Dezimalpunkt-Invariante
+- Maximale Ziffernanzahl
+- Clear setzt Initialzustand
+- State-Wertgleichheit
+- Round-Trip Parser/Formatter
 
-**Abgedeckte Properties**:
+Nice-to-have:
 
-| Property | Getestete Komponente | Muster |
-|---|---|---|
-| 1: Korrekte Berechnung | CalculatorEngine | Metamorphisch (Vergleich mit Referenz) |
-| 2: Division durch Null | CalculatorEngine | Fehlerbedingung |
-| 3: Sequenzielle Auswertung | CalculatorCubit | Invariante |
-| 4: Fehlerzustand-Übergänge | CalculatorCubit | Zustandsmaschine |
-| 5: Ergebnis als Operand | CalculatorCubit | Zustandsmaschine |
-| 6: Keine führenden Nullen | CalculatorCubit | Invariante |
-| 7: Dezimalpunkt-Invariante | CalculatorCubit | Invariante |
-| 8: Max. Ziffernanzahl | CalculatorCubit + Formatter | Invariante |
-| 9: Clear → Initialzustand | CalculatorCubit | Idempotenz |
-| 10: Backspace | CalculatorCubit | Metamorphisch |
-| 11: State-Wertgleichheit | CalculatorState | Reflexivität |
-| 12: Round-Trip | Parser + Formatter | Round-Trip |
-| 13: Formatter-Invarianten | ExpressionFormatter | Invariante |
-| 14: Parser-Fehler | ExpressionParser | Fehlerbedingung |
-| 15: Operator-Ersetzung | CalculatorCubit | Zustandsmaschine |
+- Komplette State-Machine
+- Operator-Ersetzung
+- Backspace als metamorphischer Test
+- Formatter-Invarianten separat
 
-### Unit Tests (Beispiel-basiert)
+### Bibliothek
+
+```yaml
+dev_dependencies:
+  glados: ^1.1.1
+  bloc_test: ^9.1.0
+  mocktail: ^1.0.0
+```
+
+### Unit Tests
 
 | Bereich | Testfälle |
 |---|---|
-| CalculatorEngine | Konkrete Berechnungen (2+3=5, 10÷2=5, etc.) |
-| ExpressionParser | Spezifische Fehlertypen (je ein Beispiel pro ParseFailureType) |
-| ExpressionFormatter | Formatierung mit führenden Nullen, Rundung |
-| CalculatorCubit | Spezifische Zustandsübergänge (Equals ohne Operator, Dezimalpunkt nach Ergebnis) |
+| CalculatorEngine | Addition, Subtraktion, Multiplikation, Division, Division durch Null, Overflow |
+| ExpressionParser | Gültige Ausdrücke, fehlender Operand, fehlender Operator, ungültiges Zeichen, Operand zu lang |
+| ExpressionFormatter | Führende Nullen, Dezimalzahlen, Rundung, negative Ergebnisse, Round-Trip-Fälle |
+| CalculatorCubit | Zifferneingabe, Dezimalpunkt, Operatorwahl, Gleichheit, Clear, Backspace, Fehler-Recovery |
+| CalculatorState | Initialzustand, `copyWith`, Wertgleichheit |
 
 ### Widget Tests
 
 | Widget | Testfälle |
 |---|---|
-| CalculatorButton | Instanziierung, Tap-Callback, visuelle Zustände |
-| DisplayPanel | Anzeige von Eingabe, Ausdruck, Fehlertext |
-| ButtonGrid | Vollständigkeit der Tasten, 4-Spalten-Layout |
-| CalculatorPage | Hochformat-Layout, Querformat-Layout, Responsivität |
+| CalculatorButton | Instanziierung, Tap-Callback, aktiver Zustand, Mindestgröße |
+| DisplayPanel | Hauptanzeige, Nebenanzeige, Fehlertext |
+| ButtonGrid | Vollständigkeit der Tasten, keine doppelten interaktiven Tasten, aktive Operator-Hervorhebung |
+| CalculatorPage | Hochformat, Querformat, Responsivität, Cubit-Integration |
 
 ### Testverzeichnisstruktur
 
-```
+```text
 test/
 ├── core/
-│   └── error/
-│       └── failures_test.dart
+│   └── result/
+│       └── result_test.dart
 └── features/
     └── calculator/
         ├── domain/
         │   ├── entities/
         │   │   └── calculation_expression_test.dart
+        │   ├── failures/
+        │   │   ├── calculation_failure_test.dart
+        │   │   └── parse_failure_test.dart
         │   └── usecases/
         │       ├── calculator_engine_test.dart
         │       ├── calculator_engine_property_test.dart
@@ -579,16 +784,7 @@ test/
                 └── display_panel_test.dart
 ```
 
-### Abhängigkeiten für Tests
-
-```yaml
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  glados: ^1.1.1          # Property-Based Testing
-  bloc_test: ^9.1.0       # Cubit/Bloc Testing Utilities
-  mocktail: ^1.0.0        # Mocking
-```
+## Abhängigkeiten
 
 ### Produktions-Abhängigkeiten
 
@@ -596,7 +792,28 @@ dev_dependencies:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_bloc: ^8.1.0    # Cubit State Management
-  equatable: ^2.0.5       # Value Equality
-  dartz: ^0.10.1          # Either-Type für Fehlerbehandlung
+  flutter_bloc: ^8.1.0
+  equatable: ^2.0.5
+  decimal: ^3.0.0
 ```
+
+### Test-Abhängigkeiten
+
+```yaml
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  glados: ^1.1.1
+  bloc_test: ^9.1.0
+  mocktail: ^1.0.0
+```
+
+## Implementierungshinweise
+
+- Die App soll keine unbehandelten Exceptions für erwartbare Rechen- oder Parsefehler verwenden.
+- UI-Texte wie `Fehler` gehören ausschließlich in die Presentation-Schicht.
+- Der Domain-Layer darf keine Flutter-Imports enthalten.
+- Widgets sollen separat testbar bleiben und keinen vollständigen App-Zustand voraussetzen.
+- `ExpressionParser` und `ExpressionFormatter` sollen unabhängig von `CalculatorCubit` testbar sein.
+- Das ButtonGrid verwendet bewusst keine mehrdeutigen Spans und keine doppelten interaktiven Tasten.
+- Negative direkte Eingabe ist nicht Teil der aktuellen UI, kann aber später über eine `+/-`-Taste ergänzt werden.
