@@ -2,20 +2,24 @@
 
 ## Einleitung
 
-Dieses Dokument beschreibt die Anforderungen für eine Taschenrechner-App, die als Flutter-Anwendung mit Clean Architecture umgesetzt wird. Die App ersetzt das bestehende Counter-Template und bietet grundlegende arithmetische Operationen mit einer übersichtlichen, responsiven Benutzeroberfläche. Die Architektur folgt dem Prinzip der Schichtentrennung (Domain/Data/Presentation) und setzt auf wiederverwendbare, in separate Dateien ausgelagerte Widgets.
+Dieses Dokument beschreibt die Anforderungen für eine Taschenrechner-App, die als Flutter-Anwendung mit Clean Architecture umgesetzt wird. Die App ersetzt das bestehende Counter-Template und bietet grundlegende arithmetische Operationen mit einer übersichtlichen, responsiven Benutzeroberfläche. Die Architektur folgt dem Prinzip der Schichtentrennung zwischen Domain und Presentation. Eine Data-Schicht ist für diese App nur erforderlich, wenn später Persistenz, Konfiguration oder externe Datenquellen ergänzt werden.
+
+Die Anwendung verwendet wiederverwendbare, in separate Dateien ausgelagerte Widgets und eine einheitliche, testbare Zustandsverwaltung.
 
 ## Glossar
 
-- **Calculator_App**: Die Flutter-Taschenrechner-Anwendung als Gesamtsystem
-- **Calculator_Engine**: Die Domain-Schicht-Komponente, die arithmetische Berechnungen durchführt (Use Case)
-- **Display_Panel**: Das Widget zur Anzeige der aktuellen Eingabe und des Ergebnisses
-- **Button_Grid**: Das Widget-Raster, das alle Taschenrechner-Tasten enthält
-- **Calculator_Button**: Ein einzelnes, wiederverwendbares Button-Widget für Ziffern und Operatoren
-- **Calculator_State**: Der immutable Zustand des Taschenrechners (aktuelle Eingabe, Operator, Ergebnis)
-- **Expression_Parser**: Die Komponente, die Benutzereingaben in berechenbare Ausdrücke umwandelt
-- **Expression_Formatter**: Die Komponente, die berechnete Ergebnisse in eine darstellbare Zeichenkette formatiert
-- **Operator**: Eine arithmetische Operation (+, −, ×, ÷)
-- **Operand**: Ein numerischer Wert, der in eine Berechnung eingeht
+- **CalculatorApp**: Die Flutter-Taschenrechner-Anwendung als Gesamtsystem.
+- **CalculatorEngine**: Domain-Komponente bzw. Use Case, die arithmetische Berechnungen durchführt.
+- **CalculationFailure**: Domain-Fehlerobjekt, das einen Berechnungsfehler beschreibt, ohne UI-Texte zu enthalten.
+- **DisplayPanel**: Widget zur Anzeige der aktuellen Eingabe, des Zwischenausdrucks und des Ergebnisses.
+- **ButtonGrid**: Widget-Raster, das alle Taschenrechner-Tasten enthält.
+- **CalculatorButton**: Einzelnes, wiederverwendbares Button-Widget für Ziffern, Operatoren und Steuerfunktionen.
+- **CalculatorState**: Immutable Zustand des Taschenrechners.
+- **CalculatorStatus**: Status des Taschenrechners, z. B. `input`, `operatorSelected`, `resultShown` oder `error`.
+- **ExpressionParser**: Komponente, die formatierte Benutzereingaben in berechenbare Ausdrücke umwandelt.
+- **ExpressionFormatter**: Komponente, die berechnete Ergebnisse oder Ausdrücke in darstellbare Zeichenketten formatiert.
+- **Operator**: Eine arithmetische Operation: Addition (+), Subtraktion (−), Multiplikation (×) oder Division (÷).
+- **Operand**: Numerischer Wert, der in eine Berechnung eingeht.
 
 ## Requirements
 
@@ -25,13 +29,16 @@ Dieses Dokument beschreibt die Anforderungen für eine Taschenrechner-App, die a
 
 #### Acceptance Criteria
 
-1. WHEN der Benutzer zwei Operanden und einen Operator eingibt und die Gleichheits-Taste drückt, THE Calculator_Engine SHALL das mathematisch korrekte arithmetische Ergebnis berechnen und zurückgeben, wobei Ergebnisse mit nicht-terminierenden Dezimalstellen auf maximal 10 signifikante Stellen gerundet werden.
-2. THE Calculator_Engine SHALL die Operationen Addition (+), Subtraktion (−), Multiplikation (×) und Division (÷) unterstützen.
-3. IF eine Division durch Null angefordert wird, THEN THE Calculator_Engine SHALL den Text „Fehler" als Ergebnis zurückgeben und keinen Absturz auslösen.
-4. THE Calculator_Engine SHALL Dezimalzahlen als Operanden im Bereich von -999999999999 bis 999999999999 akzeptieren und Ergebnisse auf maximal 10 Dezimalstellen Genauigkeit verarbeiten.
-5. WHEN mehrere Operationen hintereinander eingegeben werden, THE Calculator_Engine SHALL das Zwischenergebnis als ersten Operanden der nächsten Operation verwenden.
-6. IF das Ergebnis einer Berechnung den darstellbaren Bereich von 12 Ziffern überschreitet, THEN THE Calculator_Engine SHALL den Text „Fehler" als Ergebnis zurückgeben.
-7. IF eine Folgeoperation nach einem Fehlerzustand eingegeben wird, THEN THE Calculator_Engine SHALL den Fehlerzustand zurücksetzen und die neue Eingabe als Beginn einer neuen Berechnung behandeln.
+1. WHEN der Benutzer zwei gültige Operanden und einen Operator eingibt und die Gleichheits-Taste drückt, THE CalculatorEngine SHALL das mathematisch korrekte Ergebnis für die gewählte Operation berechnen.
+2. THE CalculatorEngine SHALL die Operationen Addition (+), Subtraktion (−), Multiplikation (×) und Division (÷) unterstützen.
+3. IF eine Division durch Null angefordert wird, THEN THE CalculatorEngine SHALL einen CalculationFailure vom Typ `divisionByZero` zurückgeben und keinen Absturz auslösen.
+4. THE CalculatorEngine SHALL Dezimalzahlen als Operanden im Bereich von -999999999999 bis 999999999999 akzeptieren.
+5. THE CalculatorApp SHALL Operationen sequenziell in Eingabereihenfolge auswerten und keine Operatorpräzedenz anwenden.
+6. WHEN mehrere Operationen hintereinander eingegeben werden, THE CalculatorApp SHALL das Zwischenergebnis als ersten Operanden der nächsten Operation verwenden.
+7. IF ein CalculationFailure vorliegt, THEN THE CalculatorApp SHALL in den Fehlerzustand wechseln und THE DisplayPanel SHALL den Text „Fehler" anzeigen.
+8. IF eine neue Ziffern- oder Dezimalpunkt-Eingabe nach einem Fehlerzustand erfolgt, THEN THE CalculatorApp SHALL den Fehlerzustand zurücksetzen und die neue Eingabe als Beginn einer neuen Berechnung behandeln.
+9. IF ein Operator nach einem angezeigten Ergebnis eingegeben wird, THEN THE CalculatorApp SHALL das Ergebnis als ersten Operanden der nächsten Berechnung verwenden.
+10. IF eine Ziffern- oder Dezimalpunkt-Eingabe nach einem angezeigten Ergebnis erfolgt, THEN THE CalculatorApp SHALL eine neue Berechnung beginnen und das vorherige Ergebnis verwerfen.
 
 ### Requirement 2: Zahleneingabe und Anzeige
 
@@ -39,13 +46,16 @@ Dieses Dokument beschreibt die Anforderungen für eine Taschenrechner-App, die a
 
 #### Acceptance Criteria
 
-1. WHEN der Benutzer eine Zifferntaste (0–9) drückt, THE Display_Panel SHALL die gedrückte Ziffer an die aktuelle Eingabe anhängen und anzeigen, wobei führende Nullen unterdrückt werden (Eingabe von „0" gefolgt von einer Ziffer 1–9 ersetzt die „0" durch die neue Ziffer).
-2. WHEN der Benutzer die Dezimalpunkt-Taste drückt und die aktuelle Eingabe leer ist oder nur „0" enthält, THE Display_Panel SHALL „0." anzeigen.
-3. WHILE bereits ein Dezimalpunkt in der aktuellen Eingabe vorhanden ist, THE Calculator_App SHALL weitere Dezimalpunkt-Eingaben ignorieren.
-4. THE Display_Panel SHALL maximal 12 Ziffern pro Operand anzeigen, wobei der Dezimalpunkt und ein optionales Minuszeichen nicht als Ziffer zählen.
-5. WHILE die aktuelle Eingabe bereits 12 Ziffern enthält, THE Calculator_App SHALL weitere Zifferneingaben ignorieren.
-6. WHEN das Ergebnis berechnet wurde, THE Display_Panel SHALL das Ergebnis in der Hauptanzeige darstellen; IF das Ergebnis mehr als 12 Ziffern umfasst, THEN THE Display_Panel SHALL das Ergebnis auf 12 signifikante Stellen gerundet anzeigen.
-7. WHEN der Benutzer die Dezimalpunkt-Taste drückt und die aktuelle Eingabe noch keinen Dezimalpunkt enthält, THE Display_Panel SHALL einen Dezimalpunkt an die aktuelle Eingabe anhängen.
+1. WHEN der Benutzer eine Zifferntaste (0–9) drückt, THE DisplayPanel SHALL die gedrückte Ziffer an die aktuelle Eingabe anhängen und anzeigen, wobei führende Nullen unterdrückt werden.
+2. IF die aktuelle Eingabe „0" ist und der Benutzer eine Ziffer von 1 bis 9 eingibt, THEN THE CalculatorApp SHALL die „0" durch die neue Ziffer ersetzen.
+3. WHEN der Benutzer die Dezimalpunkt-Taste drückt und die aktuelle Eingabe leer ist oder nur „0" enthält, THE DisplayPanel SHALL „0." anzeigen.
+4. WHEN der Benutzer die Dezimalpunkt-Taste drückt und die aktuelle Eingabe noch keinen Dezimalpunkt enthält, THE DisplayPanel SHALL einen Dezimalpunkt an die aktuelle Eingabe anhängen.
+5. WHILE bereits ein Dezimalpunkt in der aktuellen Eingabe vorhanden ist, THE CalculatorApp SHALL weitere Dezimalpunkt-Eingaben ignorieren.
+6. THE DisplayPanel SHALL maximal 12 sichtbare Ziffern pro Operand anzeigen, wobei Dezimalpunkt und optionales Minuszeichen nicht als Ziffern zählen.
+7. WHILE die aktuelle Eingabe bereits 12 sichtbare Ziffern enthält, THE CalculatorApp SHALL weitere Zifferneingaben ignorieren.
+8. WHEN das Ergebnis berechnet wurde, THE DisplayPanel SHALL das Ergebnis in der Hauptanzeige darstellen.
+9. IF ein berechnetes Ergebnis mehr als 12 sichtbare Ziffern benötigt, THEN THE DisplayPanel SHALL das Ergebnis auf maximal 12 signifikante Ziffern runden.
+10. IF ein berechnetes Ergebnis nicht endlich ist oder außerhalb des unterstützten numerischen Bereichs liegt, THEN THE CalculatorApp SHALL in den Fehlerzustand wechseln und THE DisplayPanel SHALL „Fehler" anzeigen.
 
 ### Requirement 3: Lösch- und Korrekturfunktionen
 
@@ -53,10 +63,12 @@ Dieses Dokument beschreibt die Anforderungen für eine Taschenrechner-App, die a
 
 #### Acceptance Criteria
 
-1. WHEN der Benutzer die „C"-Taste (Clear) drückt, THE Calculator_App SHALL den gesamten Zustand zurücksetzen (Eingabe, Operator und Ergebnis löschen) und THE Display_Panel SHALL „0" anzeigen.
-2. WHEN der Benutzer die Rücktaste (⌫) drückt, THE Calculator_App SHALL das letzte Zeichen (Ziffer oder Dezimalpunkt) aus der aktuellen Eingabe entfernen.
-3. IF nach dem Entfernen eines Zeichens keine Zeichen mehr in der aktuellen Eingabe vorhanden sind, THEN THE Display_Panel SHALL „0" anzeigen und weitere Rücktasten-Eingaben ignorieren, solange die Anzeige „0" ist.
-4. IF ein Ergebnis angezeigt wird (nach Drücken der Gleichheits-Taste) und der Benutzer die Rücktaste (⌫) drückt, THEN THE Calculator_App SHALL das Ergebnis als neue aktuelle Eingabe übernehmen und das letzte Zeichen daraus entfernen.
+1. WHEN der Benutzer die „C"-Taste (Clear) drückt, THE CalculatorApp SHALL den gesamten Zustand zurücksetzen und THE DisplayPanel SHALL „0" anzeigen.
+2. WHEN der Benutzer die Rücktaste (⌫) drückt, THE CalculatorApp SHALL das letzte Zeichen aus der aktuellen Eingabe entfernen.
+3. IF nach dem Entfernen eines Zeichens keine Zeichen mehr in der aktuellen Eingabe vorhanden sind, THEN THE DisplayPanel SHALL „0" anzeigen.
+4. WHILE die Anzeige „0" ist und kein Ergebnis angezeigt wird, THE CalculatorApp SHALL weitere Rücktasten-Eingaben ignorieren.
+5. IF ein Ergebnis angezeigt wird und der Benutzer die Rücktaste (⌫) drückt, THEN THE CalculatorApp SHALL das Ergebnis als neue aktuelle Eingabe übernehmen und das letzte Zeichen daraus entfernen.
+6. IF ein Fehlerzustand aktiv ist und der Benutzer die Rücktaste (⌫) drückt, THEN THE CalculatorApp SHALL den Fehlerzustand zurücksetzen und THE DisplayPanel SHALL „0" anzeigen.
 
 ### Requirement 4: Wiederverwendbare Widget-Architektur
 
@@ -64,11 +76,15 @@ Dieses Dokument beschreibt die Anforderungen für eine Taschenrechner-App, die a
 
 #### Acceptance Criteria
 
-1. THE Calculator_Button SHALL als eigenständiges Widget in einer separaten Datei implementiert sein und über erforderliche Parameter für Beschriftung (String), Hintergrundfarbe (Color) und onPressed-Callback (VoidCallback) konfigurierbar sein.
-2. THE Display_Panel SHALL als eigenständiges Widget in einer separaten Datei implementiert sein und den aktuellen Eingabetext sowie das Ergebnis als separate String-Parameter entgegennehmen.
-3. THE Button_Grid SHALL als eigenständiges Widget in einer separaten Datei implementiert sein und Calculator_Button-Instanzen in einem Raster-Layout mit 4 Spalten anordnen.
-4. THE Calculator_App SHALL die Clean-Architecture-Schichtentrennung einhalten: Widgets im Presentation-Layer dürfen ausschließlich Use-Case-Klassen aus dem Domain-Layer aufrufen und keine Data-Layer-Klassen direkt importieren.
-5. THE Calculator_Button, THE Display_Panel und THE Button_Grid SHALL jeweils unabhängig voneinander in einem Widget-Test instanziierbar sein, ohne dass der vollständige App-Zustand initialisiert werden muss.
+1. THE CalculatorButton SHALL als eigenständiges Widget in einer separaten Datei implementiert sein.
+2. THE CalculatorButton SHALL über erforderliche Parameter für Beschriftung (String), Hintergrundfarbe (Color) und onPressed-Callback (VoidCallback) konfigurierbar sein.
+3. THE DisplayPanel SHALL als eigenständiges Widget in einer separaten Datei implementiert sein.
+4. THE DisplayPanel SHALL den aktuellen Eingabetext, einen optionalen Zwischenausdruck und einen optionalen Fehlertext als String-Parameter entgegennehmen.
+5. THE ButtonGrid SHALL als eigenständiges Widget in einer separaten Datei implementiert sein.
+6. THE ButtonGrid SHALL CalculatorButton-Instanzen in einem Raster-Layout mit 4 Spalten anordnen.
+7. THE ButtonGrid SHALL Tasten für die Ziffern 0–9, Dezimalpunkt, Addition, Subtraktion, Multiplikation, Division, Gleichheit, Clear und Rücktaste enthalten.
+8. THE CalculatorApp SHALL die Clean-Architecture-Schichtentrennung einhalten: Widgets im Presentation-Layer dürfen Use-Case-Klassen aus dem Domain-Layer aufrufen und keine Data-Layer-Klassen direkt importieren.
+9. THE CalculatorButton, THE DisplayPanel und THE ButtonGrid SHALL jeweils unabhängig voneinander in einem Widget-Test instanziierbar sein, ohne dass der vollständige App-Zustand initialisiert werden muss.
 
 ### Requirement 5: Zustandsverwaltung
 
@@ -76,11 +92,15 @@ Dieses Dokument beschreibt die Anforderungen für eine Taschenrechner-App, die a
 
 #### Acceptance Criteria
 
-1. THE Calculator_State SHALL immutable sein und folgende Felder mit definierten Initialwerten enthalten: aktuelle Eingabe (String, initial "0"), gewählter Operator (nullable, initial null), erster Operand (nullable Dezimalzahl, initial null) und Ergebnis (nullable Dezimalzahl, initial null).
-2. WHEN eine Benutzeraktion erfolgt (Zifferneingabe, Dezimalpunkt, Operator-Wahl, Gleichheits-Taste, Löschen, Rücktaste), THE Calculator_App SHALL einen neuen Calculator_State erzeugen, anstatt den bestehenden zu mutieren.
-3. THE Calculator_App SHALL eine konsistente State-Management-Lösung (Cubit/Bloc, Riverpod oder Provider) verwenden, die in der gesamten App einheitlich eingesetzt wird.
-4. THE Calculator_State SHALL Wertgleichheit (value equality) unterstützen, sodass zwei Instanzen mit identischen Feldwerten als gleich gelten.
-5. WHEN die Calculator_App gestartet oder über die „C"-Taste zurückgesetzt wird, THE Calculator_App SHALL den Calculator_State auf den definierten Initialzustand setzen (aktuelle Eingabe "0", Operator null, erster Operand null, Ergebnis null).
+1. THE CalculatorState SHALL immutable sein und folgende Felder mit definierten Initialwerten enthalten: `currentInput` (String, initial „0"), `selectedOperator` (Operator?, initial null), `firstOperand` (Decimal?, initial null), `result` (Decimal?, initial null) und `status` (CalculatorStatus, initial `input`).
+2. THE CalculatorStatus SHALL mindestens die Werte `input`, `operatorSelected`, `resultShown` und `error` unterstützen.
+3. WHEN eine Benutzeraktion erfolgt, THE CalculatorApp SHALL einen neuen CalculatorState erzeugen, anstatt den bestehenden Zustand zu mutieren.
+4. THE CalculatorApp SHALL eine konsistente State-Management-Lösung verwenden, z. B. Cubit/Bloc, Riverpod oder Provider, die in der gesamten App einheitlich eingesetzt wird.
+5. THE CalculatorState SHALL Wertgleichheit (value equality) unterstützen, sodass zwei Instanzen mit identischen Feldwerten als gleich gelten.
+6. WHEN die CalculatorApp gestartet oder über die „C"-Taste zurückgesetzt wird, THE CalculatorApp SHALL den CalculatorState auf den definierten Initialzustand setzen.
+7. WHILE `status` den Wert `error` hat, THE DisplayPanel SHALL „Fehler" anzeigen.
+8. WHILE `status` den Wert `operatorSelected` hat, THE CalculatorApp SHALL die aktive Operator-Taste visuell hervorheben.
+9. WHILE `status` den Wert `resultShown` hat, THE CalculatorApp SHALL entscheiden können, ob die nächste Eingabe eine neue Berechnung startet oder mit dem Ergebnis weiterrechnet.
 
 ### Requirement 6: Ausdruck-Parsing und Formatierung (Round-Trip)
 
@@ -88,11 +108,15 @@ Dieses Dokument beschreibt die Anforderungen für eine Taschenrechner-App, die a
 
 #### Acceptance Criteria
 
-1. WHEN eine gültige Benutzereingabe vorliegt (bestehend aus einem ersten Operanden, einem Operator aus +, −, ×, ÷ und einem zweiten Operanden, wobei jeder Operand maximal 12 Ziffern mit optionalem Dezimalpunkt enthält), THE Expression_Parser SHALL die Eingabe in eine interne Berechnungsstruktur (Operand, Operator, Operand) umwandeln.
-2. IF eine ungültige Eingabe vorliegt (fehlender Operand, fehlender Operator, ungültiges Zeichen oder Operand mit mehr als 12 Ziffern), THEN THE Expression_Parser SHALL einen Fehler zurückgeben, der die Art der Ungültigkeit benennt (fehlender Operand, fehlender Operator, ungültiges Zeichen oder Überlänge).
-3. THE Expression_Formatter SHALL eine interne Berechnungsstruktur in eine Zeichenkette im Format „{Operand1} {Operator} {Operand2}" formatieren, wobei Operanden ohne führende Nullen (außer bei Werten kleiner 1) und mit maximal 12 signifikanten Ziffern dargestellt werden.
-4. THE Expression_Parser und THE Expression_Formatter SHALL die Round-Trip-Eigenschaft erfüllen: Wird eine gültige Berechnungsstruktur formatiert und das Ergebnis erneut geparst, so sind die Operandenwerte numerisch gleich und der Operator-Typ identisch zur ursprünglichen Struktur.
-5. IF der Expression_Formatter eine Berechnungsstruktur mit einem Operanden erhält, der mehr als 12 Ziffern enthält, THEN THE Expression_Formatter SHALL den Operanden auf 12 signifikante Ziffern runden, bevor die Zeichenkette erzeugt wird.
+1. WHEN eine gültige Benutzereingabe vorliegt, bestehend aus einem ersten Operanden, einem Operator aus +, −, ×, ÷ und einem zweiten Operanden, THE ExpressionParser SHALL die Eingabe in eine interne Berechnungsstruktur umwandeln.
+2. THE ExpressionParser SHALL Operanden mit maximal 12 sichtbaren Ziffern und optionalem Dezimalpunkt akzeptieren.
+3. IF eine ungültige Eingabe vorliegt, THEN THE ExpressionParser SHALL einen Parse-Fehler zurückgeben, der die Art der Ungültigkeit benennt.
+4. THE ExpressionParser SHALL mindestens die Fehlerarten `missingOperand`, `missingOperator`, `invalidCharacter` und `operandTooLong` unterscheiden.
+5. THE ExpressionFormatter SHALL eine interne Berechnungsstruktur in eine Zeichenkette im Format „{Operand1} {Operator} {Operand2}" formatieren.
+6. THE ExpressionFormatter SHALL Operanden ohne führende Nullen darstellen, außer bei Werten kleiner als 1.
+7. THE ExpressionFormatter SHALL Operanden mit maximal 12 sichtbaren Ziffern darstellen, wobei Dezimalpunkt und optionales Minuszeichen nicht als Ziffern zählen.
+8. THE ExpressionParser und THE ExpressionFormatter SHALL die Round-Trip-Eigenschaft erfüllen: Wird eine gültige Berechnungsstruktur formatiert und das Ergebnis erneut geparst, so sind die Operandenwerte numerisch gleich und der Operator-Typ identisch zur ursprünglichen Struktur.
+9. IF der ExpressionFormatter eine Berechnungsstruktur mit einem Operanden erhält, der mehr als 12 sichtbare Ziffern enthält, THEN THE ExpressionFormatter SHALL den Operanden auf 12 signifikante Ziffern runden, bevor die Zeichenkette erzeugt wird.
 
 ### Requirement 7: Responsives Layout
 
@@ -100,11 +124,11 @@ Dieses Dokument beschreibt die Anforderungen für eine Taschenrechner-App, die a
 
 #### Acceptance Criteria
 
-1. THE Calculator_App SHALL das Button_Grid und das Display_Panel so skalieren, dass beide Komponenten den verfügbaren Bildschirmbereich vollständig ausfüllen, ohne horizontalen Überlauf zu erzeugen, auf Geräten mit einer Bildschirmbreite zwischen 320 und 1024 logischen Pixeln.
-2. THE Calculator_Button SHALL eine Mindestgröße von 48x48 logischen Pixeln einhalten, um die Barrierefreiheits-Richtlinien für Touch-Ziele zu erfüllen.
-3. WHILE die App im Hochformat angezeigt wird, THE Calculator_App SHALL das Display_Panel im oberen Drittel (30–36 % der Bildschirmhöhe) und das Button_Grid in den unteren zwei Dritteln (64–70 % der Bildschirmhöhe) des Bildschirms platzieren.
-4. WHILE die App im Querformat angezeigt wird, THE Calculator_App SHALL das Display_Panel auf der linken Seite (30–40 % der Bildschirmbreite) und das Button_Grid auf der rechten Seite (60–70 % der Bildschirmbreite) nebeneinander platzieren.
-5. IF die verfügbare Bildschirmfläche nicht ausreicht, um alle Calculator_Button-Instanzen mit der Mindestgröße von 48x48 logischen Pixeln darzustellen, THEN THE Calculator_App SHALL das Button_Grid scrollbar machen, sodass alle Tasten erreichbar bleiben.
+1. THE CalculatorApp SHALL das ButtonGrid und das DisplayPanel so skalieren, dass beide Komponenten den verfügbaren Bildschirmbereich vollständig ausfüllen, ohne horizontalen Überlauf zu erzeugen, auf Geräten mit einer Bildschirmbreite zwischen 320 und 1024 logischen Pixeln.
+2. THE CalculatorButton SHALL eine Mindestgröße von 48x48 logischen Pixeln einhalten, um Barrierefreiheits-Richtlinien für Touch-Ziele zu erfüllen.
+3. WHILE die App im Hochformat angezeigt wird, THE CalculatorApp SHALL das DisplayPanel im oberen Drittel (30–36 % der Bildschirmhöhe) und das ButtonGrid in den unteren zwei Dritteln (64–70 % der Bildschirmhöhe) des Bildschirms platzieren.
+4. WHILE die App im Querformat angezeigt wird, THE CalculatorApp SHALL das DisplayPanel auf der linken Seite (30–40 % der Bildschirmbreite) und das ButtonGrid auf der rechten Seite (60–70 % der Bildschirmbreite) nebeneinander platzieren.
+5. IF die verfügbare Bildschirmfläche nicht ausreicht, um alle CalculatorButton-Instanzen mit der Mindestgröße von 48x48 logischen Pixeln darzustellen, THEN THE CalculatorApp SHALL das ButtonGrid scrollbar machen, sodass alle Tasten erreichbar bleiben.
 
 ### Requirement 8: Visuelles Feedback
 
@@ -112,7 +136,22 @@ Dieses Dokument beschreibt die Anforderungen für eine Taschenrechner-App, die a
 
 #### Acceptance Criteria
 
-1. WHEN der Benutzer einen Calculator_Button drückt, THE Calculator_Button SHALL eine visuelle Zustandsänderung (Farbänderung oder Ripple-Effekt) innerhalb von 100ms anzeigen und diese für mindestens 150ms sichtbar halten.
-2. THE Calculator_App SHALL Operator-Tasten durch eine andere Hintergrundfarbe von Ziffern-Tasten unterscheiden, sodass der Farbunterschied ohne Vergleich erkennbar ist (Mindest-Kontrastverhältnis von 3:1 zwischen den Hintergrundfarben der beiden Tastengruppen).
-3. WHILE ein Operator ausgewählt ist und noch kein zweiter Operand eingegeben wurde, THE Calculator_App SHALL die aktive Operator-Taste durch eine visuell unterscheidbare Hintergrundfarbe gegenüber den nicht-aktiven Operator-Tasten hervorheben.
-4. WHEN der Benutzer einen anderen Operator auswählt, während bereits ein Operator aktiv ist, THE Calculator_App SHALL die Hervorhebung der vorherigen Operator-Taste entfernen und die neu gewählte Operator-Taste hervorheben.
+1. WHEN der Benutzer einen CalculatorButton drückt, THE CalculatorButton SHALL eine visuelle Zustandsänderung anzeigen, z. B. Farbänderung, Pressed-State oder Ripple-Effekt.
+2. THE CalculatorApp SHALL Operator-Tasten durch eine andere Hintergrundfarbe von Ziffern-Tasten unterscheiden.
+3. THE CalculatorApp SHALL für den Farbunterschied zwischen Operator-Tasten und Ziffern-Tasten ein Mindest-Kontrastverhältnis von 3:1 zwischen den Hintergrundfarben der beiden Tastengruppen einhalten.
+4. WHILE ein Operator ausgewählt ist und noch kein zweiter Operand eingegeben wurde, THE CalculatorApp SHALL die aktive Operator-Taste durch eine visuell unterscheidbare Hintergrundfarbe gegenüber den nicht-aktiven Operator-Tasten hervorheben.
+5. WHEN der Benutzer einen anderen Operator auswählt, während bereits ein Operator aktiv ist, THE CalculatorApp SHALL die Hervorhebung der vorherigen Operator-Taste entfernen und die neu gewählte Operator-Taste hervorheben.
+
+### Requirement 9: Besondere Eingabefälle
+
+**User Story:** Als Benutzer möchte ich, dass der Taschenrechner sich bei unvollständigen oder ungewöhnlichen Eingabefolgen vorhersehbar verhält, damit ich keine unerwarteten Ergebnisse erhalte.
+
+#### Acceptance Criteria
+
+1. IF der Benutzer einen Operator direkt nach einem anderen Operator drückt, THEN THE CalculatorApp SHALL den vorherigen Operator durch den neu gewählten Operator ersetzen.
+2. IF der Benutzer die Gleichheits-Taste drückt, ohne dass ein zweiter Operand eingegeben wurde, THEN THE CalculatorApp SHALL die Eingabe ignorieren und den aktuellen Zustand unverändert lassen.
+3. IF der Benutzer die Gleichheits-Taste drückt, ohne dass ein Operator ausgewählt wurde, THEN THE CalculatorApp SHALL die Eingabe ignorieren und den aktuellen Zustand unverändert lassen.
+4. IF der Benutzer nach einem angezeigten Ergebnis eine Ziffer eingibt, THEN THE CalculatorApp SHALL eine neue Berechnung mit dieser Ziffer beginnen.
+5. IF der Benutzer nach einem angezeigten Ergebnis einen Operator eingibt, THEN THE CalculatorApp SHALL mit dem angezeigten Ergebnis als erstem Operanden weiterrechnen.
+6. IF der Benutzer nach einem angezeigten Ergebnis die Dezimalpunkt-Taste drückt, THEN THE CalculatorApp SHALL eine neue Berechnung mit der Eingabe „0." beginnen.
+7. IF der Benutzer nach einem Fehlerzustand die Clear-Taste drückt, THEN THE CalculatorApp SHALL den definierten Initialzustand wiederherstellen.
