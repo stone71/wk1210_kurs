@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'data/datasources/open_meteo_datasource.dart';
 import 'data/datasources/location_datasource.dart';
+import 'data/datasources/geocoding_datasource.dart';
 import 'data/repositories/open_meteo_weather_repository.dart';
 import 'data/repositories/device_location_repository.dart';
+import 'data/repositories/open_meteo_geocoding_repository.dart';
 import 'presentation/pages/weather_page.dart';
 
 void main() {
@@ -20,6 +22,9 @@ class MyApp extends StatelessWidget {
     final locationRepository = DeviceLocationRepository(
       datasource: LocationDatasource(),
     );
+    final geocodingRepository = OpenMeteoGeocodingRepository(
+      datasource: GeocodingDatasource(),
+    );
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -31,6 +36,7 @@ class MyApp extends StatelessWidget {
       home: WeatherPage(
         weatherRepository: weatherRepository,
         locationRepository: locationRepository,
+        geocodingRepository: geocodingRepository,
       ),
     );
   }

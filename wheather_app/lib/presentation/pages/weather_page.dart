@@ -5,6 +5,7 @@ import '../../domain/entities/hourly_weather.dart';
 import '../../domain/entities/location.dart';
 import '../../domain/repositories/weather_repository.dart';
 import '../../domain/repositories/location_repository.dart';
+import '../../domain/repositories/geocoding_repository.dart';
 import '../utils/weather_icon_mapper.dart';
 import '../utils/responsive.dart';
 import '../../domain/entities/weather_code_mapper.dart';
@@ -12,11 +13,13 @@ import '../../domain/entities/weather_code_mapper.dart';
 class WeatherPage extends StatefulWidget {
   final WeatherRepository weatherRepository;
   final LocationRepository locationRepository;
+  final GeocodingRepository geocodingRepository;
 
   const WeatherPage({
     super.key,
     required this.weatherRepository,
     required this.locationRepository,
+    required this.geocodingRepository,
   });
 
   @override
@@ -31,13 +34,25 @@ class _WeatherPageState extends State<WeatherPage> {
   bool _isLoading = true;
   String? _error;
 
+  // Suche
+  final TextEditingController _searchController = TextEditingController();
+  List<UserLocation>? _searchResults;
+  bool _isSearching = false;
+  bool _showSearch = false;
+
   @override
   void initState() {
     super.initState();
-    _loadAll();
+    _loadCurrentLocation();
   }
 
-  Future<void> _loadAll() async {
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCurrentLocation() async {
     setState(() {
       _isLoading = true;
       _error = null;
@@ -45,6 +60,22 @@ class _WeatherPageState extends State<WeatherPage> {
 
     try {
       final location = await widget.locationRepository.getCurrentLocation();
+      await _loadWeatherForLocation(location);
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadWeatherForLocation(UserLocation location) async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
       final lat = location.latitude;
       final lon = location.longitude;
 
@@ -69,6 +100,46 @@ class _WeatherPageState extends State<WeatherPage> {
     }
   }
 
+  Future<void> _searchLocations(String query) async {
+    if (query.trim().length < 2) {
+      setState(() => _searchResults = null);
+      return;
+    }
+
+    setState(() => _isSearching = true);
+
+    try {
+      final results = await widget.geocodingRepository.searchLocations(query.trim());
+      setState(() {
+        _searchResults = results;
+        _isSearching = false;
+      });
+    } catch (_) {
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+      });
+    }
+  }
+
+  void _selectLocation(UserLocation location) {
+    setState(() {
+      _showSearch = false;
+      _searchResults = null;
+      _searchController.clear();
+    });
+    _loadWeatherForLocation(location);
+  }
+
+  void _resetToCurrentLocation() {
+    setState(() {
+      _showSearch = false;
+      _searchResults = null;
+      _searchController.clear();
+    });
+    _loadCurrentLocation();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -80,7 +151,7 @@ class _WeatherPageState extends State<WeatherPage> {
             children: [
               CircularProgressIndicator(),
               SizedBox(height: 16),
-              Text('Standort wird ermittelt...'),
+              Text('Wetterdaten werden geladen...'),
             ],
           ),
         ),
@@ -111,7 +182,7 @@ class _WeatherPageState extends State<WeatherPage> {
                 ),
                 const SizedBox(height: 24),
                 ElevatedButton.icon(
-                  onPressed: _loadAll,
+                  onPressed: _loadCurrentLocation,
                   icon: const Icon(Icons.refresh),
                   label: const Text('Erneut versuchen'),
                 ),
@@ -125,7 +196,7 @@ class _WeatherPageState extends State<WeatherPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       body: RefreshIndicator(
-        onRefresh: _loadAll,
+        onRefresh: () => _loadWeatherForLocation(_location!),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final screenType = Responsive.getScreenType(context);
@@ -136,9 +207,18 @@ class _WeatherPageState extends State<WeatherPage> {
               child: Center(
                 child: ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: maxWidth),
-                  child: screenType == ScreenType.mobile
-                      ? _buildMobileLayout()
-                      : _buildWideLayout(screenType),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildHeader(),
+                      if (_showSearch) _buildSearchSection(),
+                      if (screenType == ScreenType.mobile)
+                        ..._buildMobileContent()
+                      else
+                        _buildWideContent(screenType),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -148,65 +228,53 @@ class _WeatherPageState extends State<WeatherPage> {
     );
   }
 
-  Widget _buildMobileLayout() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _buildHeader(),
-        _buildCurrentDetails(),
-        _buildHourlySection(),
-        _buildDailySection(),
-        const SizedBox(height: 16),
-      ],
-    );
+  List<Widget> _buildMobileContent() {
+    return [
+      _buildCurrentDetails(),
+      _buildHourlySection(),
+      _buildDailySection(),
+    ];
   }
 
-  Widget _buildWideLayout(ScreenType screenType) {
+  Widget _buildWideContent(ScreenType screenType) {
     final padding = Responsive.pagePadding(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _buildHeader(),
-        Padding(
-          padding: padding,
-          child: screenType == ScreenType.desktop
-              ? Row(
+    return Padding(
+      padding: padding,
+      child: screenType == ScreenType.desktop
+          ? Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    children: [
+                      _buildCurrentDetailsCard(),
+                      const SizedBox(height: 16),
+                      _buildHourlyCard(),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  flex: 2,
+                  child: _buildDailyCard(),
+                ),
+              ],
+            )
+          : Column(
+              children: [
+                Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      flex: 3,
-                      child: Column(
-                        children: [
-                          _buildCurrentDetailsCard(),
-                          const SizedBox(height: 16),
-                          _buildHourlyCard(),
-                        ],
-                      ),
-                    ),
+                    Expanded(child: _buildCurrentDetailsCard()),
                     const SizedBox(width: 16),
-                    Expanded(
-                      flex: 2,
-                      child: _buildDailyCard(),
-                    ),
-                  ],
-                )
-              : Column(
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: _buildCurrentDetailsCard()),
-                        const SizedBox(width: 16),
-                        Expanded(child: _buildDailyCard()),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildHourlyCard(),
+                    Expanded(child: _buildDailyCard()),
                   ],
                 ),
-        ),
-        const SizedBox(height: 24),
-      ],
+                const SizedBox(height: 16),
+                _buildHourlyCard(),
+              ],
+            ),
     );
   }
 
@@ -232,18 +300,50 @@ class _WeatherPageState extends State<WeatherPage> {
           padding: EdgeInsets.fromLTRB(24, isMobile ? 16 : 24, 24, isMobile ? 20 : 32),
           child: Column(
             children: [
+              // Ortsname + Such-Button + GPS-Button
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  IconButton(
+                    icon: const Icon(Icons.my_location, color: Colors.white70, size: 20),
+                    onPressed: _resetToCurrentLocation,
+                    tooltip: 'Mein Standort',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                  const SizedBox(width: 8),
                   const Icon(Icons.location_on, color: Colors.white70, size: 16),
                   const SizedBox(width: 4),
-                  Text(
-                    location.cityName,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w500,
+                  Flexible(
+                    child: Text(
+                      location.cityName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: Icon(
+                      _showSearch ? Icons.close : Icons.search,
+                      color: Colors.white70,
+                      size: 20,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _showSearch = !_showSearch;
+                        if (!_showSearch) {
+                          _searchResults = null;
+                          _searchController.clear();
+                        }
+                      });
+                    },
+                    tooltip: 'Ort suchen',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
                   ),
                 ],
               ),
@@ -280,6 +380,84 @@ class _WeatherPageState extends State<WeatherPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSearchSection() {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: [
+          TextField(
+            controller: _searchController,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: 'Ort suchen...',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: _isSearching
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : null,
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
+            onChanged: _searchLocations,
+            textInputAction: TextInputAction.search,
+          ),
+          if (_searchResults != null && _searchResults!.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(top: 4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _searchResults!.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final loc = _searchResults![index];
+                  return ListTile(
+                    leading: const Icon(Icons.location_on_outlined, size: 20),
+                    title: Text(
+                      loc.cityName,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    dense: true,
+                    onTap: () => _selectLocation(loc),
+                  );
+                },
+              ),
+            ),
+          if (_searchResults != null && _searchResults!.isEmpty && !_isSearching)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'Keine Ergebnisse gefunden',
+                style: TextStyle(color: Colors.grey, fontSize: 13),
+              ),
+            ),
+        ],
       ),
     );
   }
