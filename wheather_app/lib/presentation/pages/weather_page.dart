@@ -193,36 +193,98 @@ class _WeatherPageState extends State<WeatherPage> {
       );
     }
 
+    final screenType = Responsive.getScreenType(context);
+    final maxWidth = Responsive.contentMaxWidth(context);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       body: RefreshIndicator(
         onRefresh: () => _loadWeatherForLocation(_location!),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final screenType = Responsive.getScreenType(context);
-            final maxWidth = Responsive.contentMaxWidth(context);
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxWidth),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildTopBar(),
+                  if (_showSearch) _buildSearchSection(),
+                  if (screenType == ScreenType.mobile)
+                    ..._buildMobileContent()
+                  else
+                    ..._buildWideContent(screenType),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
-            return SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: maxWidth),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildHeader(),
-                      if (_showSearch) _buildSearchSection(),
-                      if (screenType == ScreenType.mobile)
-                        ..._buildMobileContent()
-                      else
-                        _buildWideContent(screenType),
-                      const SizedBox(height: 16),
-                    ],
+  // Schmaler Top-Bar mit Ortsname und Such-/GPS-Buttons
+  Widget _buildTopBar() {
+    final location = _location!;
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF1976D2), Color(0xFF1E88E5)],
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.my_location, color: Colors.white70, size: 20),
+                onPressed: _resetToCurrentLocation,
+                tooltip: 'Mein Standort',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.location_on, color: Colors.white70, size: 16),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  location.cityName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w500,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-            );
-          },
+              const SizedBox(width: 8),
+              IconButton(
+                icon: Icon(
+                  _showSearch ? Icons.close : Icons.search,
+                  color: Colors.white70,
+                  size: 20,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _showSearch = !_showSearch;
+                    if (!_showSearch) {
+                      _searchResults = null;
+                      _searchController.clear();
+                    }
+                  });
+                },
+                tooltip: 'Ort suchen',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -230,157 +292,120 @@ class _WeatherPageState extends State<WeatherPage> {
 
   List<Widget> _buildMobileContent() {
     return [
+      _buildHeaderCard(),
       _buildCurrentDetails(),
       _buildHourlySection(),
       _buildDailySection(),
     ];
   }
 
-  Widget _buildWideContent(ScreenType screenType) {
+  List<Widget> _buildWideContent(ScreenType screenType) {
     final padding = Responsive.pagePadding(context);
-    return Padding(
-      padding: padding,
-      child: screenType == ScreenType.desktop
-          ? Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: Column(
-                    children: [
-                      _buildCurrentDetailsCard(),
-                      const SizedBox(height: 16),
-                      _buildHourlyCard(),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  flex: 2,
-                  child: _buildDailyCard(),
-                ),
-              ],
-            )
-          : Column(
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: _buildCurrentDetailsCard()),
-                    const SizedBox(width: 16),
-                    Expanded(child: _buildDailyCard()),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _buildHourlyCard(),
-              ],
+    return [
+      // Header-Übersicht + 7-Tage auf einer Ebene
+      Padding(
+        padding: padding,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Linke Seite: große Temperaturanzeige + Details
+            Expanded(
+              flex: 3,
+              child: _buildHeaderCard(),
             ),
-    );
+            const SizedBox(width: 16),
+            // Rechte Seite: 7-Tage-Vorhersage
+            Expanded(
+              flex: 2,
+              child: _buildDailyCard(),
+            ),
+          ],
+        ),
+      ),
+      // Stündlich darunter
+      Padding(
+        padding: EdgeInsets.fromLTRB(padding.left, 0, padding.right, 0),
+        child: _buildHourlyCard(),
+      ),
+    ];
   }
 
-  Widget _buildHeader() {
+  // Große Wetter-Karte mit Temperatur, Icon und Details
+  Widget _buildHeaderCard() {
     final weather = _currentWeather!;
-    final location = _location!;
-    final tempFontSize = Responsive.headerFontSize(context);
     final isMobile = Responsive.isMobile(context);
+    final tempFontSize = Responsive.headerFontSize(context);
     final iconSize = isMobile ? 56.0 : 64.0;
     final descSize = isMobile ? 16.0 : 18.0;
 
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF1976D2), Color(0xFF42A5F5)],
-        ),
-      ),
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(24, isMobile ? 16 : 24, 24, isMobile ? 20 : 32),
-          child: Column(
-            children: [
-              // Ortsname + Such-Button + GPS-Button
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.my_location, color: Colors.white70, size: 20),
-                    onPressed: _resetToCurrentLocation,
-                    tooltip: 'Mein Standort',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.location_on, color: Colors.white70, size: 16),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      location.cityName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: Icon(
-                      _showSearch ? Icons.close : Icons.search,
-                      color: Colors.white70,
-                      size: 20,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _showSearch = !_showSearch;
-                        if (!_showSearch) {
-                          _searchResults = null;
-                          _searchController.clear();
-                        }
-                      });
-                    },
-                    tooltip: 'Ort suchen',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Icon(
-                weatherIconFromCode(weather.weatherCode),
-                size: iconSize,
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: const Color(0xFF42A5F5),
+      margin: isMobile ? const EdgeInsets.all(12) : EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            Icon(
+              weatherIconFromCode(weather.weatherCode),
+              size: iconSize,
+              color: Colors.white,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${weather.temperature.round()}°',
+              style: TextStyle(
                 color: Colors.white,
+                fontSize: tempFontSize,
+                fontWeight: FontWeight.w200,
               ),
-              const SizedBox(height: 4),
-              Text(
-                '${weather.temperature.round()}°',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: tempFontSize,
-                  fontWeight: FontWeight.w200,
-                ),
+            ),
+            Text(
+              weather.weatherDescription,
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: descSize,
               ),
-              Text(
-                weather.weatherDescription,
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: descSize,
-                ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Gefühlt ${weather.apparentTemperature.round()}°',
+              style: const TextStyle(
+                color: Colors.white60,
+                fontSize: 13,
               ),
-              const SizedBox(height: 2),
-              Text(
-                'Gefühlt ${weather.apparentTemperature.round()}°',
-                style: const TextStyle(
-                  color: Colors.white60,
-                  fontSize: 13,
-                ),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 16),
+            // Detail-Zeile
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildHeaderDetailItem(Icons.air, '${weather.windSpeed.round()} km/h', 'Wind'),
+                _buildHeaderDetailItem(Icons.water_drop_outlined, '${weather.humidity}%', 'Feuchte'),
+                _buildHeaderDetailItem(Icons.thermostat, '${weather.apparentTemperature.round()}°', 'Gefühlt'),
+              ],
+            ),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _buildHeaderDetailItem(IconData icon, String value, String label) {
+    return Column(
+      children: [
+        Icon(icon, color: Colors.white70, size: 20),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+        ),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white60, fontSize: 11),
+        ),
+      ],
     );
   }
 
