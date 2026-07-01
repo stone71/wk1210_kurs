@@ -358,21 +358,39 @@ class _WeatherPageState extends State<WeatherPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Stündlich',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            const Row(
+              children: [
+                Text(
+                  'Stündlich',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                ),
+                Spacer(),
+                Icon(Icons.arrow_forward_ios, size: 12, color: Colors.grey),
+              ],
             ),
             const SizedBox(height: 10),
             SizedBox(
-              height: 88,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: hourly.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 14),
-                itemBuilder: (context, index) {
-                  final h = hourly[index];
-                  return _buildHourlyItem(h);
+              height: 92,
+              child: ShaderMask(
+                shaderCallback: (bounds) {
+                  return const LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [Colors.white, Colors.white, Colors.white, Colors.transparent],
+                    stops: [0.0, 0.85, 0.92, 1.0],
+                  ).createShader(bounds);
                 },
+                blendMode: BlendMode.dstIn,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: hourly.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 16),
+                  itemBuilder: (context, index) {
+                    final h = hourly[index];
+                    return _buildHourlyItem(h);
+                  },
+                ),
               ),
             ),
           ],
