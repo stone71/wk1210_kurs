@@ -1,30 +1,59 @@
 # Weather App
 
-Eine Flutter-Wetter-App, die aktuelle Wetterdaten und Vorhersagen anzeigt. Das Projekt folgt den Prinzipien der Clean Architecture und ist so aufgebaut, dass die Datenquelle jederzeit ausgetauscht werden kann.
+Eine Flutter-Wetter-App, die aktuelle Wetterdaten und Vorhersagen basierend auf dem aktuellen Standort anzeigt. Das Projekt folgt den Prinzipien der Clean Architecture mit klarer Schichttrennung und responsivem Design für Handy, Tablet und Desktop.
+
+## Features
+
+- Aktuelle Wetterdaten mit Temperatur, gefühlter Temperatur, Wind und Luftfeuchtigkeit
+- Stündliche Vorhersage (24h, horizontal scrollbar)
+- 7-Tage-Vorhersage mit Wettericons und Min/Max-Temperaturen
+- Automatische Standorterkennung per GPS
+- Ortssuche mit Live-Vorschlägen
+- Zurücksetzen auf den eigenen Standort per GPS-Button
+- Pull-to-Refresh zum Aktualisieren
+- Responsives Layout für Handy, Tablet und Desktop
 
 ## Projektstruktur
 
 ```
 lib/
-├── main.dart                              App-Einstiegspunkt
-├── domain/                                Business-Logik (keine externen Abhängigkeiten)
+├── main.dart                                    App-Einstiegspunkt
+├── domain/                                      Business-Logik (keine externen Abhängigkeiten)
 │   ├── entities/
-│   │   ├── weather.dart                   Entity: aktuelles Wetter
-│   │   ├── daily_weather.dart             Entity: Tagesvorhersage
-│   │   ├── hourly_weather.dart            Entity: stündliche Vorhersage
-│   │   └── weather_code_mapper.dart       WMO-Wettercode → Beschreibung
+│   │   ├── weather.dart                         Entity: aktuelles Wetter
+│   │   ├── daily_weather.dart                   Entity: Tagesvorhersage
+│   │   ├── hourly_weather.dart                  Entity: stündliche Vorhersage
+│   │   ├── location.dart                        Entity: Standort (lat, lon, Name)
+│   │   └── weather_code_mapper.dart             WMO-Wettercode → Beschreibung
 │   └── repositories/
-│       └── weather_repository.dart        Abstraktes Repository-Interface
-├── data/                                  Datenquellen-Implementierung
+│       ├── weather_repository.dart              Abstraktes Weather-Interface
+│       ├── location_repository.dart             Abstraktes Location-Interface
+│       └── geocoding_repository.dart            Abstraktes Geocoding-Interface
+├── data/                                        Datenquellen-Implementierung
 │   ├── datasources/
-│   │   └── open_meteo_datasource.dart     HTTP-Zugriff auf Open-Meteo API
+│   │   ├── open_meteo_datasource.dart           HTTP-Zugriff auf Open-Meteo Weather API
+│   │   ├── location_datasource.dart             GPS + Reverse-Geocoding (Nominatim)
+│   │   └── geocoding_datasource.dart            Open-Meteo Geocoding API (Ortssuche)
 │   └── repositories/
-│       └── open_meteo_weather_repository.dart  Konkrete Implementierung
-└── presentation/                          UI-Schicht
+│       ├── open_meteo_weather_repository.dart   WeatherRepository-Implementierung
+│       ├── device_location_repository.dart      LocationRepository-Implementierung
+│       └── open_meteo_geocoding_repository.dart GeocodingRepository-Implementierung
+└── presentation/                                UI-Schicht
     ├── pages/
-    │   └── weather_page.dart              Hauptseite mit Wetteranzeige
+    │   └── weather_page.dart                    State-Management + Layout-Entscheidung
+    ├── widgets/
+    │   ├── weather_top_bar.dart                 Ortsname, GPS-/Such-Button
+    │   ├── weather_search.dart                  Suchfeld + Ergebnisliste
+    │   ├── weather_header_card.dart             Große Temperaturanzeige + Details
+    │   ├── hourly_forecast_card.dart            Stündliche Vorhersage
+    │   └── daily_forecast_card.dart             7-Tage-Vorhersage
+    ├── layouts/
+    │   ├── mobile_weather_layout.dart           Anordnung für Handy (< 600px)
+    │   ├── tablet_weather_layout.dart           Anordnung für Tablet (600–1200px)
+    │   └── desktop_weather_layout.dart          Anordnung für Desktop (> 1200px)
     └── utils/
-        └── weather_icon_mapper.dart       Wettercode → Icon/Farbe
+        ├── responsive.dart                      Breakpoints + Responsive-Helper
+        └── weather_icon_mapper.dart             Wettercode → Icon/Farbe
 ```
 
 ## Architektur
@@ -32,17 +61,36 @@ lib/
 Das Projekt folgt dem Clean-Architecture-Ansatz mit drei Schichten:
 
 ### Domain Layer
-Enthält die Entities und das abstrakte Repository-Interface. Diese Schicht hat keine Abhängigkeit zu Flutter, HTTP oder anderen Paketen. Sie definiert, welche Daten die App benötigt, ohne zu wissen, woher sie kommen.
+
+Enthält die Entities und abstrakten Repository-Interfaces. Diese Schicht hat keine Abhängigkeit zu Flutter, HTTP oder anderen Paketen. Sie definiert, welche Daten die App benötigt, ohne zu wissen, woher sie kommen.
 
 ### Data Layer
-Implementiert das Repository-Interface aus der Domain-Schicht. Hier findet der konkrete API-Zugriff statt. Durch die Trennung von Datasource (HTTP-Logik) und Repository (Mapping auf Entities) kann die Datenquelle unabhängig ausgetauscht werden.
+
+Implementiert die Repository-Interfaces aus der Domain-Schicht. Hier findet der konkrete API-Zugriff statt. Durch die Trennung von Datasource (HTTP-/Geräte-Logik) und Repository (Mapping auf Entities) kann jede Datenquelle unabhängig ausgetauscht werden.
 
 ### Presentation Layer
-Die UI-Schicht kennt nur das abstrakte Repository-Interface. Sie rendert die Daten unabhängig davon, ob sie von Open-Meteo, einem eigenen Backend oder einer lokalen Datenbank stammen.
+
+Die UI-Schicht kennt nur die abstrakten Repository-Interfaces. Sie ist in drei Bereiche unterteilt:
+
+- **Pages** – Orchestrierung: Daten laden, State verwalten, Layout wählen
+- **Widgets** – Wiederverwendbare UI-Bausteine, empfangen Daten als Props
+- **Layouts** – Anordnung der Widgets je nach Bildschirmgröße
+
+## Responsive Design
+
+Das Layout passt sich automatisch an die Bildschirmbreite an:
+
+| Gerät | Breite | Layout |
+|-------|--------|--------|
+| Handy | < 600px | Alles untereinander, kompakte Abstände |
+| Tablet | 600–1200px | Header + 7-Tage nebeneinander, Stündlich darunter, max. 800px |
+| Desktop | > 1200px | Wie Tablet, zentriert mit max. 1000px Breite |
+
+Die Breakpoints und Helper-Funktionen liegen in `presentation/utils/responsive.dart`. Es wird kein externes Paket verwendet – Flutter's `MediaQuery` und `ConstrainedBox` reichen für diesen Anwendungsfall aus.
 
 ## Datenquelle austauschen
 
-Um eine andere API anzubinden:
+Um eine andere Wetter-API anzubinden:
 
 1. Neue Datasource erstellen unter `lib/data/datasources/`
 2. Neues Repository erstellen, das `WeatherRepository` implementiert
@@ -50,21 +98,13 @@ Um eine andere API anzubinden:
 
 ```dart
 // Vorher:
-final repository = OpenMeteoWeatherRepository(datasource: OpenMeteoDatasource());
+final weatherRepository = OpenMeteoWeatherRepository(datasource: OpenMeteoDatasource());
 
 // Nachher:
-final repository = MeinEigenesWeatherRepository(datasource: MeineDatasource());
+final weatherRepository = MeinWeatherRepository(datasource: MeineDatasource());
 ```
 
-## Design
-
-Das UI orientiert sich am Aufbau von wetter.de und zeigt:
-
-- Header mit Ortsname, aktuellem Wetter-Icon, Temperatur und gefühlter Temperatur
-- Detail-Karte mit Wind, Luftfeuchtigkeit und gefühlter Temperatur
-- Stündliche Vorhersage (24h, horizontal scrollbar)
-- 7-Tage-Vorhersage mit Wochentag, Icon, Beschreibung und Min/Max-Temperatur
-- Pull-to-Refresh zum Aktualisieren
+Der gleiche Mechanismus gilt für `LocationRepository` und `GeocodingRepository`.
 
 ## Externe Schnittstellen
 
@@ -105,6 +145,31 @@ GET /v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,weather_co
 | `temperature_2m_max` | Tageshöchsttemperatur | °C |
 | `temperature_2m_min` | Tagestiefsttemperatur | °C |
 
+### Open-Meteo Geocoding API
+
+- URL: `https://geocoding-api.open-meteo.com/v1/search`
+- Zweck: Ortssuche nach Name → Koordinaten
+- Authentifizierung: Keine
+- Beispiel: `?name=Berlin&count=5&language=de&format=json`
+
+Wird für die Live-Ortssuche im Suchfeld verwendet. Liefert bis zu 5 Treffer mit Name, Region, Land und Koordinaten.
+
+### Nominatim (OpenStreetMap) – Reverse Geocoding
+
+- URL: `https://nominatim.openstreetmap.org/reverse`
+- Zweck: Koordinaten → Ortsname (für GPS-Standort)
+- Authentifizierung: Keine (User-Agent erforderlich)
+- Nutzungsbedingungen: Max. 1 Request/Sekunde
+- Lizenz: [ODbL](https://opendatacommons.org/licenses/odbl/)
+
+Wird verwendet, um nach der GPS-Ortung den lesbaren Stadtnamen zu ermitteln.
+
+### Geolocator (Flutter-Paket)
+
+- Paket: `geolocator` auf pub.dev
+- Zweck: GPS-Position des Geräts ermitteln
+- Berechtigungen: `ACCESS_FINE_LOCATION` (Android), `NSLocationWhenInUseUsageDescription` (iOS)
+
 #### WMO-Wettercodes (Auszug)
 
 | Code | Bedeutung |
@@ -118,16 +183,11 @@ GET /v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,weather_co
 | 80, 81, 82 | Regenschauer |
 | 95 | Gewitter |
 
-### Open-Meteo Geocoding API (vorbereitet, noch nicht implementiert)
-
-- URL: `https://geocoding-api.open-meteo.com/v1/search`
-- Zweck: Ortssuche nach Name → Koordinaten
-- Beispiel: `?name=Gießen&count=5&language=de`
-
 ## Voraussetzungen
 
 - Flutter SDK ≥ 3.11.5
 - Internetverbindung (für API-Zugriffe)
+- Standortberechtigung (für GPS)
 
 ## Starten
 
@@ -140,5 +200,18 @@ flutter run
 
 | Paket | Zweck |
 |-------|-------|
-| `http` | HTTP-Anfragen an die Open-Meteo API |
+| `http` | HTTP-Anfragen an Open-Meteo und Nominatim |
+| `geolocator` | GPS-Standortermittlung |
 | `cupertino_icons` | iOS-Style Icons |
+
+## Entwicklungsverlauf
+
+1. **Projekt-Setup** – Flutter-Projekt erstellt, Boilerplate bereinigt
+2. **API-Recherche** – Open-Meteo als kostenlose Wetter-API identifiziert und Endpunkte dokumentiert
+3. **Clean Architecture** – Domain-/Data-Schichttrennung mit abstrakten Repositories eingeführt
+4. **Wetterdaten-Anbindung** – Open-Meteo Datasource + Repository für aktuelles Wetter und Vorhersage
+5. **UI im wetter.de-Stil** – Header mit Temperatur, Detail-Karte, stündliche und tägliche Vorhersage
+6. **Responsive Design** – Eigener Responsive-Helper mit drei Breakpoints (Handy/Tablet/Desktop)
+7. **GPS-Standort** – Geolocator-Integration + Nominatim Reverse-Geocoding für Ortsnamen
+8. **Ortssuche** – Open-Meteo Geocoding API mit Live-Vorschlägen und Ort-Wechsel
+9. **Refactoring** – Zerlegung der monolithischen Page in Widgets und Layouts nach Clean Architecture
