@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'data/datasources/open_meteo_datasource.dart';
+import 'data/repositories/open_meteo_weather_repository.dart';
+import 'domain/repositories/weather_repository.dart';
 
 void main() {
   runApp(const MyApp());
@@ -10,56 +13,60 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Weather App',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const WeatherPage(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  final String title;
+class WeatherPage extends StatefulWidget {
+  const WeatherPage({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<WeatherPage> createState() => _WeatherPageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _WeatherPageState extends State<WeatherPage> {
+  final WeatherRepository _repository = OpenMeteoWeatherRepository(
+    datasource: OpenMeteoDatasource(),
+  );
 
-  void _incrementCounter() {
-    setState(() {
-      _counter++;
-    });
+  String _info = 'Lade Wetterdaten...';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWeather();
+  }
+
+  Future<void> _loadWeather() async {
+    try {
+      final weather = await _repository.getCurrentWeather(50.58, 8.67);
+      final forecast = await _repository.getDailyForecast(50.58, 8.67);
+
+      setState(() {
+        _info = 'Aktuell: ${weather.temperature}°C – ${weather.weatherDescription}\n'
+            'Wind: ${weather.windSpeed} km/h, Luftfeuchtigkeit: ${weather.humidity}%\n\n'
+            'Vorhersage:\n'
+            '${forecast.map((d) => '${d.date.day}.${d.date.month}: ${d.temperatureMin}°–${d.temperatureMax}°C').join('\n')}';
+      });
+    } catch (e) {
+      setState(() {
+        _info = 'Fehler: $e';
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(widget.title),
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+      appBar: AppBar(title: const Text('Weather App')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Text(_info, style: const TextStyle(fontSize: 16)),
       ),
     );
   }
