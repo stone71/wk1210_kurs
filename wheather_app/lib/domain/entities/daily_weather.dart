@@ -1,3 +1,5 @@
+import 'weather_code_mapper.dart';
+
 class DailyWeather {
   final DateTime date;
   final double temperatureMax;
@@ -10,4 +12,6 @@ class DailyWeather {
     required this.temperatureMin,
     required this.weatherCode,
   });
+
+  String get weatherDescription => weatherDescriptionFromCode(weatherCode);
 }

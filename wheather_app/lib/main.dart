@@ -51,7 +51,7 @@ class _WeatherPageState extends State<WeatherPage> {
         _info = 'Aktuell: ${weather.temperature}°C – ${weather.weatherDescription}\n'
             'Wind: ${weather.windSpeed} km/h, Luftfeuchtigkeit: ${weather.humidity}%\n\n'
             'Vorhersage:\n'
-            '${forecast.map((d) => '${d.date.day}.${d.date.month}: ${d.temperatureMin}°–${d.temperatureMax}°C').join('\n')}';
+            '${forecast.map((d) => '${d.date.day}.${d.date.month}: ${d.temperatureMin}°–${d.temperatureMax}°C, ${d.weatherDescription}').join('\n')}';
       });
     } catch (e) {
       setState(() {
