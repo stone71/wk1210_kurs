@@ -1,5 +1,6 @@
 import '../../domain/entities/weather.dart';
 import '../../domain/entities/daily_weather.dart';
+import '../../domain/entities/hourly_weather.dart';
 import '../../domain/repositories/weather_repository.dart';
 import '../datasources/open_meteo_datasource.dart';
 
@@ -15,6 +16,7 @@ class OpenMeteoWeatherRepository implements WeatherRepository {
 
     return Weather(
       temperature: (current['temperature_2m'] as num).toDouble(),
+      apparentTemperature: (current['apparent_temperature'] as num).toDouble(),
       windSpeed: (current['wind_speed_10m'] as num).toDouble(),
       humidity: (current['relative_humidity_2m'] as num).toInt(),
       weatherCode: (current['weather_code'] as num).toInt(),
@@ -38,6 +40,25 @@ class OpenMeteoWeatherRepository implements WeatherRepository {
         date: DateTime.parse(times[i]),
         temperatureMax: maxTemps[i].toDouble(),
         temperatureMin: minTemps[i].toDouble(),
+        weatherCode: codes[i].toInt(),
+      );
+    });
+  }
+
+  @override
+  Future<List<HourlyWeather>> getHourlyForecast(
+      double latitude, double longitude) async {
+    final data = await datasource.fetchHourlyForecast(latitude, longitude);
+    final hourly = data['hourly'] as Map<String, dynamic>;
+
+    final times = (hourly['time'] as List).cast<String>();
+    final temps = (hourly['temperature_2m'] as List).cast<num>();
+    final codes = (hourly['weather_code'] as List).cast<num>();
+
+    return List.generate(times.length, (i) {
+      return HourlyWeather(
+        time: DateTime.parse(times[i]),
+        temperature: temps[i].toDouble(),
         weatherCode: codes[i].toInt(),
       );
     });

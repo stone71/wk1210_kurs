@@ -2,6 +2,7 @@ import 'weather_code_mapper.dart';
 
 class Weather {
   final double temperature;
+  final double apparentTemperature;
   final double windSpeed;
   final int humidity;
   final int weatherCode;
@@ -9,6 +10,7 @@ class Weather {
 
   Weather({
     required this.temperature,
+    required this.apparentTemperature,
     required this.windSpeed,
     required this.humidity,
     required this.weatherCode,
