@@ -293,7 +293,6 @@ class _WeatherPageState extends State<WeatherPage> {
   List<Widget> _buildMobileContent() {
     return [
       _buildHeaderCard(),
-      _buildCurrentDetails(),
       _buildHourlySection(),
       _buildDailySection(),
     ];
@@ -484,63 +483,6 @@ class _WeatherPageState extends State<WeatherPage> {
             ),
         ],
       ),
-    );
-  }
-
-  Widget _buildCurrentDetails() {
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: _buildCurrentDetailsCard(),
-    );
-  }
-
-  Widget _buildCurrentDetailsCard() {
-    final weather = _currentWeather!;
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _buildDetailItem(
-              Icons.air,
-              '${weather.windSpeed.round()} km/h',
-              'Wind',
-            ),
-            _buildDetailItem(
-              Icons.water_drop_outlined,
-              '${weather.humidity}%',
-              'Feuchte',
-            ),
-            _buildDetailItem(
-              Icons.thermostat,
-              '${weather.apparentTemperature.round()}°',
-              'Gefühlt',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDetailItem(IconData icon, String value, String label) {
-    final fontSize = Responsive.bodyFontSize(context);
-    return Column(
-      children: [
-        Icon(icon, color: const Color(0xFF1976D2), size: 24),
-        const SizedBox(height: 6),
-        Text(
-          value,
-          style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(fontSize: fontSize - 2, color: Colors.grey),
-        ),
-      ],
     );
   }
 
