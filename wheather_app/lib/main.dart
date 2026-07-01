@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'data/datasources/open_meteo_datasource.dart';
+import 'data/datasources/location_datasource.dart';
 import 'data/repositories/open_meteo_weather_repository.dart';
+import 'data/repositories/device_location_repository.dart';
 import 'presentation/pages/weather_page.dart';
 
 void main() {
@@ -12,8 +14,11 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final repository = OpenMeteoWeatherRepository(
+    final weatherRepository = OpenMeteoWeatherRepository(
       datasource: OpenMeteoDatasource(),
+    );
+    final locationRepository = DeviceLocationRepository(
+      datasource: LocationDatasource(),
     );
 
     return MaterialApp(
@@ -23,7 +28,10 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1976D2)),
         useMaterial3: true,
       ),
-      home: WeatherPage(repository: repository),
+      home: WeatherPage(
+        weatherRepository: weatherRepository,
+        locationRepository: locationRepository,
+      ),
     );
   }
 }

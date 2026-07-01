@@ -2,21 +2,29 @@ import 'package:flutter/material.dart';
 import '../../domain/entities/weather.dart';
 import '../../domain/entities/daily_weather.dart';
 import '../../domain/entities/hourly_weather.dart';
+import '../../domain/entities/location.dart';
 import '../../domain/repositories/weather_repository.dart';
+import '../../domain/repositories/location_repository.dart';
 import '../utils/weather_icon_mapper.dart';
 import '../utils/responsive.dart';
 import '../../domain/entities/weather_code_mapper.dart';
 
 class WeatherPage extends StatefulWidget {
-  final WeatherRepository repository;
+  final WeatherRepository weatherRepository;
+  final LocationRepository locationRepository;
 
-  const WeatherPage({super.key, required this.repository});
+  const WeatherPage({
+    super.key,
+    required this.weatherRepository,
+    required this.locationRepository,
+  });
 
   @override
   State<WeatherPage> createState() => _WeatherPageState();
 }
 
 class _WeatherPageState extends State<WeatherPage> {
+  UserLocation? _location;
   Weather? _currentWeather;
   List<DailyWeather>? _dailyForecast;
   List<HourlyWeather>? _hourlyForecast;
@@ -26,18 +34,28 @@ class _WeatherPageState extends State<WeatherPage> {
   @override
   void initState() {
     super.initState();
-    _loadWeather();
+    _loadAll();
   }
 
-  Future<void> _loadWeather() async {
+  Future<void> _loadAll() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
     try {
+      final location = await widget.locationRepository.getCurrentLocation();
+      final lat = location.latitude;
+      final lon = location.longitude;
+
       final results = await Future.wait([
-        widget.repository.getCurrentWeather(50.58, 8.67),
-        widget.repository.getDailyForecast(50.58, 8.67),
-        widget.repository.getHourlyForecast(50.58, 8.67),
+        widget.weatherRepository.getCurrentWeather(lat, lon),
+        widget.weatherRepository.getDailyForecast(lat, lon),
+        widget.weatherRepository.getHourlyForecast(lat, lon),
       ]);
 
       setState(() {
+        _location = location;
         _currentWeather = results[0] as Weather;
         _dailyForecast = results[1] as List<DailyWeather>;
         _hourlyForecast = results[2] as List<HourlyWeather>;
@@ -55,16 +73,50 @@ class _WeatherPageState extends State<WeatherPage> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        backgroundColor: Color(0xFFF5F7FA),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Standort wird ermittelt...'),
+            ],
+          ),
+        ),
       );
     }
 
     if (_error != null) {
       return Scaffold(
+        backgroundColor: const Color(0xFFF5F7FA),
         body: Center(
           child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text('Fehler: $_error', style: const TextStyle(color: Colors.red)),
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.location_off, size: 48, color: Colors.grey),
+                const SizedBox(height: 16),
+                Text(
+                  'Standort konnte nicht ermittelt werden',
+                  style: Theme.of(context).textTheme.titleMedium,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _error!,
+                  style: const TextStyle(color: Colors.red, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: _loadAll,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Erneut versuchen'),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -73,7 +125,7 @@ class _WeatherPageState extends State<WeatherPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       body: RefreshIndicator(
-        onRefresh: _loadWeather,
+        onRefresh: _loadAll,
         child: LayoutBuilder(
           builder: (context, constraints) {
             final screenType = Responsive.getScreenType(context);
@@ -160,6 +212,7 @@ class _WeatherPageState extends State<WeatherPage> {
 
   Widget _buildHeader() {
     final weather = _currentWeather!;
+    final location = _location!;
     final tempFontSize = Responsive.headerFontSize(context);
     final isMobile = Responsive.isMobile(context);
     final iconSize = isMobile ? 56.0 : 64.0;
@@ -179,14 +232,14 @@ class _WeatherPageState extends State<WeatherPage> {
           padding: EdgeInsets.fromLTRB(24, isMobile ? 16 : 24, 24, isMobile ? 20 : 32),
           child: Column(
             children: [
-              const Row(
+              Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.location_on, color: Colors.white70, size: 16),
-                  SizedBox(width: 4),
+                  const Icon(Icons.location_on, color: Colors.white70, size: 16),
+                  const SizedBox(width: 4),
                   Text(
-                    'Gießen',
-                    style: TextStyle(
+                    location.cityName,
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 18,
                       fontWeight: FontWeight.w500,
@@ -231,7 +284,6 @@ class _WeatherPageState extends State<WeatherPage> {
     );
   }
 
-  // Mobile-Version mit eigener Padding-Logik
   Widget _buildCurrentDetails() {
     return Padding(
       padding: const EdgeInsets.all(12),
@@ -289,7 +341,6 @@ class _WeatherPageState extends State<WeatherPage> {
     );
   }
 
-  // Mobile-Version
   Widget _buildHourlySection() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -352,7 +403,6 @@ class _WeatherPageState extends State<WeatherPage> {
     );
   }
 
-  // Mobile-Version
   Widget _buildDailySection() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
